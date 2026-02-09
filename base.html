@@ -223,7 +223,7 @@
     ];
 
     const TOTAL_DAFIM = 2711;
-    const MAX_ASSIGNMENTS = 999;
+    const MAX_ASSIGNMENT_LIMIT = 999;
 
     let assignments = [];
     let currentMasechet = null;
@@ -897,7 +897,7 @@
       `);
       
       // Check limit
-      if (assignments.length + mas.dafim > MAX_ASSIGNMENTS) {
+      if (assignments.length + mas.dafim > MAX_ASSIGNMENT_LIMIT) {
         showToast('אין מקום מספיק עבור מסכת זו!', 'error');
         closeModal({ target: {}, currentTarget: {} });
         return;
@@ -1032,10 +1032,10 @@
         btn.textContent = 'משבץ...';
       }
       
-      const availableSlots = Math.max(MAX_ASSIGNMENTS - assignments.length, 0);
+      const availableSlots = Math.max(MAX_ASSIGNMENT_LIMIT - assignments.length, 0);
       const allowedDafim = dafim.slice(0, Math.min(dafim.length, availableSlots));
       if (allowedDafim.length < dafim.length) {
-        showToast(`הגעת למגבלת ${MAX_ASSIGNMENTS} שיבוצים!`, 'error');
+        showToast(`הגעת למגבלת ${MAX_ASSIGNMENT_LIMIT} שיבוצים!`, 'error');
       }
       if (allowedDafim.length === 0) {
         closeModal({ target: { }, currentTarget: { } });
@@ -1171,10 +1171,10 @@
         </div>
       `);
       
-      const availableSlots = Math.max(MAX_ASSIGNMENTS - assignments.length, 0);
+      const availableSlots = Math.max(MAX_ASSIGNMENT_LIMIT - assignments.length, 0);
       const allowedDafim = dafimToAssign.slice(0, Math.min(dafimToAssign.length, availableSlots));
       if (allowedDafim.length < dafimToAssign.length) {
-        showToast(`הגעת למגבלת ${MAX_ASSIGNMENTS} שיבוצים!`, 'error');
+        showToast(`הגעת למגבלת ${MAX_ASSIGNMENT_LIMIT} שיבוצים!`, 'error');
       }
       if (allowedDafim.length === 0) {
         closeModal({ target: {}, currentTarget: {} });
@@ -1220,8 +1220,8 @@
         closeModal({ target: {}, currentTarget: {} });
         return;
       }
-      if (assignments.length >= MAX_ASSIGNMENTS) {
-        showToast(`הגעת למגבלת ${MAX_ASSIGNMENTS} שיבוצים!`, 'error');
+      if (assignments.length >= MAX_ASSIGNMENT_LIMIT) {
+        showToast(`הגעת למגבלת ${MAX_ASSIGNMENT_LIMIT} שיבוצים!`, 'error');
         return;
       }
       
