@@ -671,24 +671,24 @@
 
         if (uniqueDafim.length > 0) {
           const rangeControls = document.createElement('div');
-          const fromId = `range-from-${index}`;
-          const toId = `range-to-${index}`;
-          const buttonId = `range-delete-${index}`;
+          const rangeFromSelectId = `range-from-${index}`;
+          const rangeToSelectId = `range-to-${index}`;
+          const rangeDeleteButtonId = `range-delete-${index}`;
           const options = uniqueDafim.map(d => `<option value="${d}">${formatDafNumber(d)}</option>`).join('');
           rangeControls.className = 'flex flex-wrap items-center gap-2 text-xs text-slate-300';
           rangeControls.innerHTML = `
             <span class="text-slate-400">מחק טווח:</span>
-            <select id="${fromId}" class="bg-slate-700 border border-slate-600 rounded-lg px-2 py-1 text-white">${options}</select>
+            <select id="${rangeFromSelectId}" class="bg-slate-700 border border-slate-600 rounded-lg px-2 py-1 text-white">${options}</select>
             <span class="text-slate-400">עד</span>
-            <select id="${toId}" class="bg-slate-700 border border-slate-600 rounded-lg px-2 py-1 text-white">${options}</select>
-            <button type="button" id="${buttonId}" class="px-2 py-1 bg-red-600/70 hover:bg-red-600 text-white rounded text-xs transition-all">הסר</button>
+            <select id="${rangeToSelectId}" class="bg-slate-700 border border-slate-600 rounded-lg px-2 py-1 text-white">${options}</select>
+            <button type="button" id="${rangeDeleteButtonId}" class="px-2 py-1 bg-red-600/70 hover:bg-red-600 text-white rounded text-xs transition-all">הסר</button>
           `;
           card.appendChild(rangeControls);
-          const fromSelect = rangeControls.querySelector(`#${fromId}`);
-          const toSelect = rangeControls.querySelector(`#${toId}`);
+          const fromSelect = rangeControls.querySelector(`#${rangeFromSelectId}`);
+          const toSelect = rangeControls.querySelector(`#${rangeToSelectId}`);
           fromSelect.value = uniqueDafim[0];
           toSelect.value = uniqueDafim[uniqueDafim.length - 1];
-          rangeControls.querySelector(`#${buttonId}`).onclick = () => confirmDeleteRange(selectedName, masechet, fromId, toId);
+          rangeControls.querySelector(`#${rangeDeleteButtonId}`).onclick = () => confirmDeleteRange(selectedName, masechet, rangeFromSelectId, rangeToSelectId);
         }
 
         if (hasFull && mas) {
@@ -927,9 +927,9 @@
       `);
     }
 
-    function confirmDeleteRange(name, masechet, fromId, toId) {
-      const fromValue = parseInt(document.getElementById(fromId)?.value);
-      const toValue = parseInt(document.getElementById(toId)?.value);
+    function confirmDeleteRange(name, masechet, fromSelectId, toSelectId) {
+      const fromValue = parseInt(document.getElementById(fromSelectId)?.value);
+      const toValue = parseInt(document.getElementById(toSelectId)?.value);
       if (!fromValue || !toValue) {
         showToast('אנא בחר טווח', 'error');
         return;
@@ -985,7 +985,7 @@
       const takenMasechot = new Set(
         assignmentRanges.filter(a => a.is_full_masechet).map(a => a.masechet)
       );
-      let hasSelection = false;
+      const firstAvailable = MASECHOT_DATA.find(m => !takenMasechot.has(m.name))?.name;
       showModal(`
         <div class="p-6">
           <h3 class="text-lg font-bold text-amber-400 mb-4">מסכת שלימה</h3>
@@ -1001,10 +1001,7 @@
                 class="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-white focus:border-amber-500 focus:outline-none">
                 ${MASECHOT_DATA.map(m => {
                   const isTaken = takenMasechot.has(m.name);
-                  const isSelected = !isTaken && !hasSelection;
-                  if (isSelected) {
-                    hasSelection = true;
-                  }
+                  const isSelected = m.name === firstAvailable;
                   return `<option value="${m.name}" ${isTaken ? 'disabled' : ''} ${isSelected ? 'selected' : ''}>${m.name} (${m.dafim} דפים)${isTaken ? ' - שובצה' : ''}</option>`;
                 }).join('')}
               </select>
