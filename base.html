@@ -1071,7 +1071,7 @@
       try {
         const response = await fetch('/api/assignments');
         if (!response.ok) {
-          throw new Error('Failed to fetch assignments');
+          throw new Error(`Failed to fetch assignments: ${response.status} ${response.statusText}`);
         }
         const data = await response.json();
         handler.onDataChanged(data);
@@ -1082,6 +1082,16 @@
         showToast('שגיאה בטעינת נתונים', 'error');
         return false;
       }
+    }
+
+    async function logResponseError(action, response) {
+      let details = '';
+      try {
+        details = await response.text();
+      } catch (error) {
+        details = 'Failed to read response body';
+      }
+      console.error(`${action} failed`, response.status, response.statusText, details);
     }
 
     window.dataSdk = {
@@ -1097,6 +1107,7 @@
             body: JSON.stringify(record)
           });
           if (!response.ok) {
+            await logResponseError('Create assignment', response);
             return { isOk: false };
           }
           await refreshAssignments();
@@ -1117,6 +1128,7 @@
             body: JSON.stringify(record)
           });
           if (!response.ok) {
+            await logResponseError('Update assignment', response);
             return { isOk: false };
           }
           await refreshAssignments();
@@ -1135,6 +1147,7 @@
             method: 'DELETE'
           });
           if (!response.ok) {
+            await logResponseError('Delete assignment', response);
             return { isOk: false };
           }
           await refreshAssignments();

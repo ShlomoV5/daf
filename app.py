@@ -13,7 +13,7 @@ DB_PATH = os.environ.get("DB_PATH", str(BASE_DIR / "assignments.db"))
 
 class AssignmentStore:
     def __init__(self, db_path: str) -> None:
-        self.connection = sqlite3.connect(db_path, check_same_thread=False)
+        self.connection = sqlite3.connect(db_path)
         self.connection.row_factory = sqlite3.Row
         self._ensure_schema()
 
