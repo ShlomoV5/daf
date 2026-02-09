@@ -33,6 +33,7 @@ class AssignmentStore:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     masechet TEXT NOT NULL,
                     daf INTEGER NOT NULL,
+                    daf_end INTEGER,
                     name TEXT NOT NULL,
                     dedication TEXT,
                     learned INTEGER NOT NULL DEFAULT 0,
@@ -41,11 +42,18 @@ class AssignmentStore:
                 )
                 """
             )
+            columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(assignments)").fetchall()
+            }
+            if "daf_end" not in columns:
+                connection.execute("ALTER TABLE assignments ADD COLUMN daf_end INTEGER")
+            connection.execute("UPDATE assignments SET daf_end = daf WHERE daf_end IS NULL")
 
     def list_assignments(self) -> list[dict]:
         with self._get_connection() as connection:
             cursor = connection.execute(
-                "SELECT id, masechet, daf, name, dedication, learned, is_full_masechet FROM assignments "
+                "SELECT id, masechet, daf, daf_end, name, dedication, learned, is_full_masechet FROM assignments "
                 "ORDER BY masechet, daf"
             )
             rows = cursor.fetchall()
@@ -54,7 +62,8 @@ class AssignmentStore:
     def get_assignment(self, assignment_id: int) -> dict | None:
         with self._get_connection() as connection:
             cursor = connection.execute(
-                "SELECT id, masechet, daf, name, dedication, learned, is_full_masechet FROM assignments WHERE id = ?",
+                "SELECT id, masechet, daf, daf_end, name, dedication, learned, is_full_masechet "
+                "FROM assignments WHERE id = ?",
                 (assignment_id,),
             )
             row = cursor.fetchone()
@@ -68,17 +77,23 @@ class AssignmentStore:
         if not payloads or not isinstance(payloads, list):
             raise ValueError("Missing required fields")
         records = [self._parse_payload(payload, require_fields=True) for payload in payloads]
+        self._validate_payload_ranges(records)
         assignment_ids = []
         with self._get_connection() as connection:
             for record in records:
+                if self._has_overlap(
+                    connection, record["masechet"], record["daf"], record["daf_end"]
+                ):
+                    raise sqlite3.IntegrityError("Assignment overlap")
                 cursor = connection.execute(
                     """
-                    INSERT INTO assignments (masechet, daf, name, dedication, learned, is_full_masechet)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO assignments (masechet, daf, daf_end, name, dedication, learned, is_full_masechet)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         record["masechet"],
                         record["daf"],
+                        record["daf_end"],
                         record["name"],
                         record.get("dedication"),
                         int(record.get("learned", False)),
@@ -94,15 +109,24 @@ class AssignmentStore:
             return None
         record = self._parse_payload(payload, require_fields=False, defaults=existing)
         with self._get_connection() as connection:
+            if self._has_overlap(
+                connection,
+                record["masechet"],
+                record["daf"],
+                record["daf_end"],
+                exclude_id=assignment_id,
+            ):
+                raise sqlite3.IntegrityError("Assignment overlap")
             connection.execute(
                 """
                 UPDATE assignments
-                SET masechet = ?, daf = ?, name = ?, dedication = ?, learned = ?, is_full_masechet = ?
+                SET masechet = ?, daf = ?, daf_end = ?, name = ?, dedication = ?, learned = ?, is_full_masechet = ?
                 WHERE id = ?
                 """,
                 (
                     record["masechet"],
                     record["daf"],
+                    record["daf_end"],
                     record["name"],
                     record.get("dedication"),
                     int(record.get("learned", False)),
@@ -112,6 +136,46 @@ class AssignmentStore:
             )
         return self.get_assignment(assignment_id)
 
+    def update_assignment_daf(
+        self, assignment_id: int, target_daf: int, learned: bool
+    ) -> dict | None:
+        record = self.get_assignment(assignment_id)
+        if not record:
+            return None
+        start = record["daf"]
+        end = record.get("daf_end", start)
+        if target_daf < start or target_daf > end:
+            return None
+        if start == end:
+            return self.update_assignment(assignment_id, {"learned": learned})
+        if record["learned"] == learned:
+            return record
+        segments = []
+        if start < target_daf:
+            segments.append((start, target_daf - 1, record["learned"]))
+        segments.append((target_daf, target_daf, learned))
+        if target_daf < end:
+            segments.append((target_daf + 1, end, record["learned"]))
+        with self._get_connection() as connection:
+            connection.execute("DELETE FROM assignments WHERE id = ?", (assignment_id,))
+            for segment_start, segment_end, segment_learned in segments:
+                connection.execute(
+                    """
+                    INSERT INTO assignments (masechet, daf, daf_end, name, dedication, learned, is_full_masechet)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        record["masechet"],
+                        segment_start,
+                        segment_end,
+                        record["name"],
+                        record.get("dedication"),
+                        int(segment_learned),
+                        int(record.get("is_full_masechet", False)),
+                    ),
+                )
+        return self._get_assignment_covering(record["masechet"], target_daf)
+
     def delete_assignment(self, assignment_id: int) -> bool:
         with self._get_connection() as connection:
             cursor = connection.execute(
@@ -120,21 +184,72 @@ class AssignmentStore:
             )
         return cursor.rowcount > 0
 
+    def delete_assignment_daf(self, assignment_id: int, target_daf: int) -> bool:
+        record = self.get_assignment(assignment_id)
+        if not record:
+            return False
+        start = record["daf"]
+        end = record.get("daf_end", start)
+        if target_daf < start or target_daf > end:
+            return False
+        with self._get_connection() as connection:
+            if start == end:
+                cursor = connection.execute(
+                    "DELETE FROM assignments WHERE id = ?",
+                    (assignment_id,),
+                )
+                return cursor.rowcount > 0
+            if target_daf == start:
+                connection.execute(
+                    "UPDATE assignments SET daf = ?, daf_end = ? WHERE id = ?",
+                    (start + 1, end, assignment_id),
+                )
+                return True
+            if target_daf == end:
+                connection.execute(
+                    "UPDATE assignments SET daf_end = ? WHERE id = ?",
+                    (end - 1, assignment_id),
+                )
+                return True
+            connection.execute("DELETE FROM assignments WHERE id = ?", (assignment_id,))
+            for segment_start, segment_end in (
+                (start, target_daf - 1),
+                (target_daf + 1, end),
+            ):
+                connection.execute(
+                    """
+                    INSERT INTO assignments (masechet, daf, daf_end, name, dedication, learned, is_full_masechet)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        record["masechet"],
+                        segment_start,
+                        segment_end,
+                        record["name"],
+                        record.get("dedication"),
+                        int(record.get("learned", False)),
+                        int(record.get("is_full_masechet", False)),
+                    ),
+                )
+        return True
+
     def replace_assignments(self, payloads: list[dict]) -> int:
         if payloads is None or not isinstance(payloads, list):
             raise ValueError("Missing required fields")
         records = [self._parse_payload(payload, require_fields=True) for payload in payloads]
+        self._validate_payload_ranges(records)
         with self._get_connection() as connection:
             connection.execute("DELETE FROM assignments")
             for record in records:
                 connection.execute(
                     """
-                    INSERT INTO assignments (masechet, daf, name, dedication, learned, is_full_masechet)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO assignments (masechet, daf, daf_end, name, dedication, learned, is_full_masechet)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         record["masechet"],
                         record["daf"],
+                        record["daf_end"],
                         record["name"],
                         record.get("dedication"),
                         int(record.get("learned", False)),
@@ -156,11 +271,62 @@ class AssignmentStore:
             "id": row["id"],
             "masechet": row["masechet"],
             "daf": row["daf"],
+            "daf_end": row["daf_end"] if row["daf_end"] is not None else row["daf"],
             "name": row["name"],
             "dedication": row["dedication"] or "",
             "learned": bool(row["learned"]),
             "is_full_masechet": bool(row["is_full_masechet"]),
         }
+
+    @staticmethod
+    def _validate_payload_ranges(records: list[dict]) -> None:
+        grouped: dict[str, list[tuple[int, int]]] = {}
+        for record in records:
+            grouped.setdefault(record["masechet"], []).append(
+                (record["daf"], record["daf_end"])
+            )
+        for ranges in grouped.values():
+            ranges.sort(key=lambda item: item[0])
+            previous_end = None
+            for start, end in ranges:
+                if previous_end is not None and start <= previous_end:
+                    raise sqlite3.IntegrityError("Overlapping assignments")
+                previous_end = end
+
+    @staticmethod
+    def _has_overlap(
+        connection: sqlite3.Connection,
+        masechet: str,
+        start: int,
+        end: int,
+        *,
+        exclude_id: int | None = None,
+    ) -> bool:
+        query = (
+            "SELECT 1 FROM assignments "
+            "WHERE masechet = ? "
+            "AND NOT (COALESCE(daf_end, daf) < ? OR daf > ?)"
+        )
+        params: list[int | str] = [masechet, start, end]
+        if exclude_id is not None:
+            query += " AND id != ?"
+            params.append(exclude_id)
+        cursor = connection.execute(query, params)
+        return cursor.fetchone() is not None
+
+    def _get_assignment_covering(self, masechet: str, daf: int) -> dict | None:
+        with self._get_connection() as connection:
+            cursor = connection.execute(
+                """
+                SELECT id, masechet, daf, daf_end, name, dedication, learned, is_full_masechet
+                FROM assignments
+                WHERE masechet = ? AND ? BETWEEN daf AND COALESCE(daf_end, daf)
+                LIMIT 1
+                """,
+                (masechet, daf),
+            )
+            row = cursor.fetchone()
+        return self._row_to_dict(row) if row else None
 
     def _get_assignments_by_ids(self, assignment_ids: list[int]) -> list[dict]:
         if not assignment_ids:
@@ -168,7 +334,7 @@ class AssignmentStore:
         placeholders = ",".join(["?"] * len(assignment_ids))
         with self._get_connection() as connection:
             query = (
-                "SELECT id, masechet, daf, name, dedication, learned, is_full_masechet "
+                "SELECT id, masechet, daf, daf_end, name, dedication, learned, is_full_masechet "
                 "FROM assignments WHERE id IN ({}) ORDER BY id"
             ).format(placeholders)
             cursor = connection.execute(query, assignment_ids)
@@ -188,6 +354,9 @@ class AssignmentStore:
         daf = payload.get("daf") if payload else None
         if daf is None:
             daf = defaults.get("daf")
+        daf_end = payload.get("daf_end") if payload else None
+        if daf_end is None:
+            daf_end = defaults.get("daf_end")
 
         masechet = str(masechet).strip() if masechet is not None else ""
         name = str(name).strip() if name is not None else ""
@@ -211,11 +380,21 @@ class AssignmentStore:
             daf_value = int(daf)
         except (TypeError, ValueError) as error:
             raise ValueError("Invalid daf") from error
+        if daf_end is None:
+            daf_end_value = daf_value
+        else:
+            try:
+                daf_end_value = int(daf_end)
+            except (TypeError, ValueError) as error:
+                raise ValueError("Invalid daf_end") from error
+        if daf_end_value < daf_value:
+            raise ValueError("Invalid daf_end")
 
         return {
             "masechet": masechet,
             "name": name,
             "daf": daf_value,
+            "daf_end": daf_end_value,
             "dedication": str(dedication).strip() if dedication is not None else "",
             "learned": bool(learned),
             "is_full_masechet": bool(is_full_masechet),
@@ -299,7 +478,19 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._send_json({"error": "Invalid JSON"}, status=400)
             return
         try:
-            record = store.update_assignment(assignment_id, payload)
+            target_daf = None
+            if isinstance(payload, dict):
+                target_daf = payload.get("target_daf", payload.get("targetDaf"))
+            if target_daf is not None:
+                target_value = int(target_daf)
+                if "learned" not in payload:
+                    self._send_json({"error": "Invalid payload"}, status=400)
+                    return
+                record = store.update_assignment_daf(
+                    assignment_id, target_value, bool(payload.get("learned"))
+                )
+            else:
+                record = store.update_assignment(assignment_id, payload)
         except ValueError:
             self._send_json({"error": "Invalid payload"}, status=400)
             return
@@ -312,14 +503,23 @@ class RequestHandler(BaseHTTPRequestHandler):
         self._send_json(record)
 
     def do_DELETE(self) -> None:
-        if not self.path.startswith("/api/assignments/"):
+        parsed = urlparse(self.path)
+        if not parsed.path.startswith("/api/assignments/"):
             self.send_error(404, "Not Found")
             return
-        assignment_id = self._extract_id()
+        assignment_id = self._extract_id(parsed.path)
         if assignment_id is None:
             self._send_json({"error": "Invalid assignment id"}, status=400)
             return
-        deleted = store.delete_assignment(assignment_id)
+        params = parse_qs(parsed.query)
+        target_daf = self._parse_int_param(params, "daf")
+        if "daf" in params and target_daf is None:
+            self._send_json({"error": "Invalid daf"}, status=400)
+            return
+        if target_daf is not None:
+            deleted = store.delete_assignment_daf(assignment_id, target_daf)
+        else:
+            deleted = store.delete_assignment(assignment_id)
         if not deleted:
             self._send_json({"error": "Assignment not found"}, status=404)
             return
@@ -587,10 +787,21 @@ class RequestHandler(BaseHTTPRequestHandler):
                 return default_value
         return default_value
 
-    def _extract_id(self) -> int | None:
+    def _extract_id(self, path: str | None = None) -> int | None:
+        raw_path = path or self.path
         try:
-            return int(self.path.rsplit("/", 1)[-1])
+            return int(raw_path.rsplit("/", 1)[-1])
         except (ValueError, IndexError):
+            return None
+
+    @staticmethod
+    def _parse_int_param(params: dict, key: str) -> int | None:
+        value = params.get(key, [""])
+        if not value or not value[0]:
+            return None
+        try:
+            return int(value[0])
+        except ValueError:
             return None
 
     def _send_json(self, payload: dict | list, *, status: int = 200) -> None:

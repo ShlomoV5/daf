@@ -10,7 +10,7 @@
     html { height: 100%; }
     body { box-sizing: border-box; height: 100%; }
     * { font-family: 'Heebo', sans-serif; }
-    .pixel { width: 8px; height: 8px; border-radius: 1px; }
+    .pixel { width: 2px; height: 2px; border-radius: 0; }
     .masechet-card:hover { transform: translateY(-2px); }
     .daf-cell { 
       width: 36px; 
@@ -225,6 +225,7 @@
     const TOTAL_DAFIM = 2711;
     const MAX_ASSIGNMENT_LIMIT = 999;
 
+    let assignmentRanges = [];
     let assignments = [];
     let currentMasechet = null;
 
@@ -266,6 +267,27 @@
       return `${year}${month}${day}`;
     }
 
+    function getRangeEnd(record) {
+      return record.daf_end ?? record.daf;
+    }
+
+    function expandAssignments(records) {
+      const expanded = [];
+      records.forEach(record => {
+        const start = record.daf;
+        const end = getRangeEnd(record);
+        for (let daf = start; daf <= end; daf += 1) {
+          expanded.push({
+            ...record,
+            daf,
+            range_start: start,
+            range_end: end
+          });
+        }
+      });
+      return expanded;
+    }
+
     function buildDafRanges(dafNumbers) {
       if (!dafNumbers.length) return [];
       const ranges = [];
@@ -300,7 +322,11 @@
         if (!grouped[item.masechet]) {
           grouped[item.masechet] = [];
         }
-        grouped[item.masechet].push(item.daf);
+        const start = item.daf;
+        const end = getRangeEnd(item);
+        for (let daf = start; daf <= end; daf += 1) {
+          grouped[item.masechet].push(daf);
+        }
       });
       const lines = Object.entries(grouped).map(([masechet, dafs]) => {
         const unique = [...new Set(dafs)].sort((a, b) => a - b);
@@ -644,8 +670,11 @@
           cell.onclick = (e) => {
             e.preventDefault();
             if (assignment) {
-              assignment.learned = !assignment.learned;
-              window.dataSdk.update(assignment).then(result => {
+              window.dataSdk.update({
+                id: assignment.id,
+                learned: !assignment.learned,
+                target_daf: daf
+              }).then(result => {
                 if (result.isOk) {
                   updateMyPagesView();
                 }
@@ -674,9 +703,14 @@
                 <span class="text-slate-400 text-xs"> דף ${formatDafNumber(item.daf)}</span>
                 ${item.dedication ? `<div class="text-slate-400 text-xs mt-1">${item.dedication}</div>` : ''}
               </div>
-              <button onclick="toggleLearned(${item.id})" class="px-2 py-1 ${item.learned ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-blue-600 hover:bg-blue-500'} text-white rounded text-xs transition-all">
-                ${item.learned ? '✓' : '◯'}
-              </button>
+              <div class="flex items-center gap-2">
+                <button onclick="toggleLearned(${item.id}, ${item.daf})" class="px-2 py-1 ${item.learned ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-blue-600 hover:bg-blue-500'} text-white rounded text-xs transition-all">
+                  ${item.learned ? '✓' : '◯'}
+                </button>
+                <button onclick="confirmDelete('${masechet}', ${item.daf})" class="px-2 py-1 bg-red-600/70 hover:bg-red-600 text-white rounded text-xs transition-all" aria-label="הסר דף">
+                  ✕
+                </button>
+              </div>
             `;
             content.appendChild(itemDiv);
           });
@@ -903,21 +937,19 @@
         return;
       }
       
-      const records = [];
-      for (let daf = 2; daf <= mas.dafim + 1; daf++) {
-        records.push({
-          masechet: masechet,
-          daf: daf,
-          name: name,
-          dedication: dedication,
-          learned: false,
-          is_full_masechet: true
-        });
-      }
-      const result = await window.dataSdk.createBulk(records, { skipRefresh: true });
+      const record = {
+        masechet: masechet,
+        daf: 2,
+        daf_end: mas.dafim + 1,
+        name: name,
+        dedication: dedication,
+        learned: false,
+        is_full_masechet: true
+      };
+      const result = await window.dataSdk.create(record, { skipRefresh: true });
       if (result.isOk) {
         await refreshAssignments();
-        showAssignmentSuccess(name, records);
+        showAssignmentSuccess(name, [record]);
       } else {
         closeModal({ target: {}, currentTarget: {} });
         showToast('שגיאה בשיבוץ', 'error');
@@ -1041,14 +1073,28 @@
         closeModal({ target: { }, currentTarget: { } });
         return;
       }
-      const records = allowedDafim.map(d => ({
-        masechet: d.masechet,
-        daf: d.daf,
-        name: name,
-        dedication: dedication,
-        learned: false,
-        is_full_masechet: false
-      }));
+      const grouped = {};
+      allowedDafim.forEach(d => {
+        if (!grouped[d.masechet]) {
+          grouped[d.masechet] = [];
+        }
+        grouped[d.masechet].push(d.daf);
+      });
+      const records = [];
+      Object.entries(grouped).forEach(([masechet, dafs]) => {
+        const ranges = buildDafRanges(dafs.sort((a, b) => a - b));
+        ranges.forEach(range => {
+          records.push({
+            masechet: masechet,
+            daf: range.start,
+            daf_end: range.end,
+            name: name,
+            dedication: dedication,
+            learned: false,
+            is_full_masechet: false
+          });
+        });
+      });
       const result = await window.dataSdk.createBulk(records, { skipRefresh: true });
       if (result.isOk) {
         await refreshAssignments();
@@ -1180,9 +1226,11 @@
         closeModal({ target: {}, currentTarget: {} });
         return;
       }
-      const records = allowedDafim.map(daf => ({
+      const ranges = buildDafRanges(allowedDafim);
+      const records = ranges.map(range => ({
         masechet: masechet,
-        daf: daf,
+        daf: range.start,
+        daf_end: range.end,
         name: name,
         dedication: dedication,
         learned: false,
@@ -1208,9 +1256,17 @@
       if (isEdit) {
         const assignment = getAssignment(masechet, daf);
         if (assignment) {
-          assignment.name = name;
-          assignment.dedication = dedication;
-          const result = await window.dataSdk.update(assignment);
+          const updateRecord = {
+            id: assignment.id,
+            masechet: assignment.masechet,
+            daf: assignment.range_start ?? assignment.daf,
+            daf_end: assignment.range_end ?? getRangeEnd(assignment),
+            name: name,
+            dedication: dedication,
+            learned: assignment.learned,
+            is_full_masechet: assignment.is_full_masechet
+          };
+          const result = await window.dataSdk.update(updateRecord);
           if (result.isOk) {
             showToast('הפרטים עודכנו');
           } else {
@@ -1228,6 +1284,7 @@
       const result = await window.dataSdk.create({
         masechet: masechet,
         daf: daf,
+        daf_end: daf,
         name: name,
         dedication: dedication,
         learned: false,
@@ -1245,10 +1302,14 @@
     async function toggleLearnedModal(masechet, daf) {
       const assignment = getAssignment(masechet, daf);
       if (assignment) {
-        assignment.learned = !assignment.learned;
-        const result = await window.dataSdk.update(assignment);
+        const nextLearned = !assignment.learned;
+        const result = await window.dataSdk.update({
+          id: assignment.id,
+          learned: nextLearned,
+          target_daf: daf
+        });
         if (result.isOk) {
-          showToast(assignment.learned ? 'סומן כנלמד!' : 'בוטל סימון נלמד');
+          showToast(nextLearned ? 'סומן כנלמד!' : 'בוטל סימון נלמד');
           renderMasechetScreen();
         } else {
           showToast('שגיאה בעדכון', 'error');
@@ -1257,14 +1318,18 @@
       closeModal({ target: {}, currentTarget: {} });
     }
 
-    async function toggleLearned(recordId) {
-      const record = assignments.find(a => a.id === recordId);
+    async function toggleLearned(recordId, targetDaf) {
+      const record = assignments.find(a => a.id === recordId && a.daf === targetDaf);
       if (!record) {
         showToast('שיבוץ לא נמצא', 'error');
         return;
       }
-      const updatedRecord = { ...record, learned: !record.learned };
-      const result = await window.dataSdk.update(updatedRecord);
+      const nextLearned = !record.learned;
+      const result = await window.dataSdk.update({
+        id: record.id,
+        learned: nextLearned,
+        target_daf: targetDaf
+      });
       if (result.isOk) {
         updateMyPagesView();
       } else {
@@ -1275,7 +1340,10 @@
     async function deleteAssignment(masechet, daf) {
       const assignment = getAssignment(masechet, daf);
       if (assignment) {
-        const result = await window.dataSdk.delete(assignment);
+        const result = await window.dataSdk.delete({
+          id: assignment.id,
+          target_daf: daf
+        });
         if (result.isOk) {
           showToast('השיבוץ נמחק');
         } else {
@@ -1294,7 +1362,8 @@
     // ========== DATA INITIALIZATION ==========
     const dataHandler = {
       onDataChanged(data) {
-        assignments = data.map(normalizeAssignment);
+        assignmentRanges = data.map(normalizeAssignment);
+        assignments = expandAssignments(assignmentRanges);
         renderStats();
         renderPixelMap();
         renderMasechotList();
@@ -1305,8 +1374,10 @@
     };
 
     function normalizeAssignment(record) {
+      const rangeEnd = record.daf_end ?? record.daf;
       return {
         ...record,
+        daf_end: rangeEnd,
         learned: Boolean(record.learned),
         is_full_masechet: Boolean(record.is_full_masechet)
       };
@@ -1407,7 +1478,11 @@
           return { isOk: false };
         }
         try {
-          const response = await fetch(`/api/assignments/${record.id}`, {
+          const targetDaf = record?.target_daf ?? record?.targetDaf;
+          const url = (targetDaf !== undefined && targetDaf !== null)
+            ? `/api/assignments/${record.id}?daf=${encodeURIComponent(targetDaf)}`
+            : `/api/assignments/${record.id}`;
+          const response = await fetch(url, {
             method: 'DELETE'
           });
           if (!response.ok) {
