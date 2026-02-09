@@ -5,8 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>שיבוץ דף יומי</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="/_sdk/element_sdk.js"></script>
-  <script src="/_sdk/data_sdk.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
     html { height: 100%; }
@@ -439,7 +437,7 @@
                 <span class="text-slate-400 text-xs"> דף ${formatDafNumber(item.daf)}</span>
                 ${item.dedication ? `<div class="text-slate-400 text-xs mt-1">${item.dedication}</div>` : ''}
               </div>
-              <button onclick="toggleLearned(${btoa(JSON.stringify(item))})" class="px-2 py-1 ${item.learned ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-blue-600 hover:bg-blue-500'} text-white rounded text-xs transition-all">
+              <button onclick="toggleLearned('${btoa(JSON.stringify(item))}')" class="px-2 py-1 ${item.learned ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-blue-600 hover:bg-blue-500'} text-white rounded text-xs transition-all">
                 ${item.learned ? '✓' : '◯'}
               </button>
             `;
@@ -1048,10 +1046,10 @@
       document.getElementById('main-subtitle').textContent = config.site_subtitle || defaultConfig.site_subtitle;
     }
 
-    // ========== SDK INITIALIZATION ==========
+    // ========== DATA INITIALIZATION ==========
     const dataHandler = {
       onDataChanged(data) {
-        assignments = data;
+        assignments = data.map(normalizeAssignment);
         renderStats();
         renderPixelMap();
         renderMasechotList();
@@ -1061,32 +1059,98 @@
       }
     };
 
-    window.elementSdk.init({
-      defaultConfig,
-      onConfigChange: async (newConfig) => {
-        config = { ...defaultConfig, ...newConfig };
-        renderConfig();
-      },
-      mapToCapabilities: (cfg) => ({
-        recolorables: [],
-        borderables: [],
-        fontEditable: undefined,
-        fontSizeable: undefined
-      }),
-      mapToEditPanelValues: (cfg) => new Map([
-        ["site_title", cfg.site_title || defaultConfig.site_title],
-        ["site_subtitle", cfg.site_subtitle || defaultConfig.site_subtitle]
-      ])
-    });
+    function normalizeAssignment(record) {
+      return {
+        ...record,
+        learned: Boolean(record.learned),
+        is_full_masechet: Boolean(record.is_full_masechet)
+      };
+    }
 
+    async function refreshAssignments(handler = dataHandler) {
+      try {
+        const response = await fetch('/api/assignments');
+        if (!response.ok) {
+          throw new Error('Failed to fetch assignments');
+        }
+        const data = await response.json();
+        handler.onDataChanged(data);
+        return true;
+      } catch (error) {
+        console.error(error);
+        handler.onDataChanged([]);
+        showToast('שגיאה בטעינת נתונים', 'error');
+        return false;
+      }
+    }
+
+    window.dataSdk = {
+      async init(handler) {
+        const result = await refreshAssignments(handler);
+        return { isOk: result };
+      },
+      async create(record) {
+        try {
+          const response = await fetch('/api/assignments', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(record)
+          });
+          if (!response.ok) {
+            return { isOk: false };
+          }
+          await refreshAssignments();
+          return { isOk: true };
+        } catch (error) {
+          console.error(error);
+          return { isOk: false };
+        }
+      },
+      async update(record) {
+        if (!record?.id) {
+          return { isOk: false };
+        }
+        try {
+          const response = await fetch(`/api/assignments/${record.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(record)
+          });
+          if (!response.ok) {
+            return { isOk: false };
+          }
+          await refreshAssignments();
+          return { isOk: true };
+        } catch (error) {
+          console.error(error);
+          return { isOk: false };
+        }
+      },
+      async delete(record) {
+        if (!record?.id) {
+          return { isOk: false };
+        }
+        try {
+          const response = await fetch(`/api/assignments/${record.id}`, {
+            method: 'DELETE'
+          });
+          if (!response.ok) {
+            return { isOk: false };
+          }
+          await refreshAssignments();
+          return { isOk: true };
+        } catch (error) {
+          console.error(error);
+          return { isOk: false };
+        }
+      }
+    };
+
+    renderConfig();
     window.dataSdk.init(dataHandler).then(result => {
       if (!result.isOk) {
-        console.error("Failed to initialize data SDK");
+        console.error("Failed to initialize data");
       }
-      renderConfig();
-      renderStats();
-      renderPixelMap();
-      renderMasechotList();
     });
   </script>
 </body>
