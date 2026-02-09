@@ -1035,7 +1035,7 @@
       const availableSlots = Math.max(MAX_ASSIGNMENTS - assignments.length, 0);
       const allowedDafim = dafim.slice(0, Math.min(dafim.length, availableSlots));
       if (allowedDafim.length < dafim.length) {
-        showToast('הגעת למגבלת 999 שיבוצים!', 'error');
+        showToast(`הגעת למגבלת ${MAX_ASSIGNMENTS} שיבוצים!`, 'error');
       }
       if (allowedDafim.length === 0) {
         closeModal({ target: { }, currentTarget: { } });
@@ -1174,7 +1174,7 @@
       const availableSlots = Math.max(MAX_ASSIGNMENTS - assignments.length, 0);
       const allowedDafim = dafimToAssign.slice(0, Math.min(dafimToAssign.length, availableSlots));
       if (allowedDafim.length < dafimToAssign.length) {
-        showToast('הגעת למגבלת 999 שיבוצים!', 'error');
+        showToast(`הגעת למגבלת ${MAX_ASSIGNMENTS} שיבוצים!`, 'error');
       }
       if (allowedDafim.length === 0) {
         closeModal({ target: {}, currentTarget: {} });
@@ -1221,7 +1221,7 @@
         return;
       }
       if (assignments.length >= MAX_ASSIGNMENTS) {
-        showToast('הגעת למגבלת 999 שיבוצים!', 'error');
+        showToast(`הגעת למגבלת ${MAX_ASSIGNMENTS} שיבוצים!`, 'error');
         return;
       }
       
