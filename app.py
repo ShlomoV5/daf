@@ -587,7 +587,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                   <a href="/dafdaf/export">הורד גיבוי</a>
                 </div>
                 <div class="card">
-                  <h2>עדכון מהגיטהאב</h2>
+                  <h2>עדכון מ-GitHub</h2>
                   <p class="muted">משיכת הקוד מתוך {UPDATE_REPO} (ענף {UPDATE_BRANCH}). הנתונים נשמרים.</p>
                   <button type="button" onclick="updateCodebase()">עדכן קוד</button>
                   <div id="update-status" class="status"></div>
@@ -606,7 +606,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                     const response = await fetch('/dafdaf/update', {{ method: 'POST' }});
                     if (response.ok) {{
                       const data = await response.json();
-                      statusEl.textContent = data.message || 'עודכן בהצלחה. השרת ייטען מחדש.';
+                      statusEl.textContent = data.message || 'עודכן בהצלחה. אם הסביבה מאפשרת, השרת ייטען מחדש.';
                       setTimeout(() => window.location.reload(), 2500);
                       return;
                     }}
@@ -703,7 +703,9 @@ class RequestHandler(BaseHTTPRequestHandler):
         self._send_json(
             {
                 "ok": True,
-                "message": f"עודכנו {updated_count} קבצים. השרת ייטען מחדש.",
+                "message": (
+                    f"עודכנו {updated_count} קבצים. אם הסביבה מאפשרת, השרת ייטען מחדש."
+                ),
             }
         )
         self._schedule_restart()
@@ -713,7 +715,9 @@ class RequestHandler(BaseHTTPRequestHandler):
         with urllib.request.urlopen(update_url, timeout=20) as response:
             status = getattr(response, "status", 200)
             if status not in (200, None):
-                raise ValueError("Failed to download update")
+                raise ValueError(
+                    f"Failed to download update from {update_url} (status {status})"
+                )
             payload = response.read()
         with tempfile.TemporaryDirectory() as temp_dir:
             extract_dir = Path(temp_dir) / "repo"
@@ -745,9 +749,13 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     @staticmethod
     def _resolve_repo_root(extract_dir: Path) -> Path:
-        for entry in extract_dir.iterdir():
-            if entry.is_dir() and entry.name != ".git":
-                return entry
+        candidates = [
+            entry
+            for entry in extract_dir.iterdir()
+            if entry.is_dir() and entry.name != ".git"
+        ]
+        if len(candidates) == 1:
+            return candidates[0]
         return extract_dir
 
     @staticmethod
