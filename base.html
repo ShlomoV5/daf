@@ -223,6 +223,7 @@
     ];
 
     const TOTAL_DAFIM = 2711;
+    const MAX_ASSIGNMENTS = 999;
 
     let assignments = [];
     let currentMasechet = null;
@@ -258,7 +259,7 @@
       return letters[num] || num.toString();
     }
 
-    function formatCalendarDate(date) {
+    function formatIcsDate(date) {
       const year = date.getFullYear();
       const month = `${date.getMonth() + 1}`.padStart(2, '0');
       const day = `${date.getDate()}`.padStart(2, '0');
@@ -333,8 +334,8 @@
       return {
         title,
         details: detailsLines.join('\n'),
-        start: formatCalendarDate(successData.startDate),
-        end: formatCalendarDate(successData.endDate)
+        start: formatIcsDate(successData.startDate),
+        end: formatIcsDate(successData.endDate)
       };
     }
 
@@ -896,7 +897,7 @@
       `);
       
       // Check limit
-      if (assignments.length + mas.dafim > 999) {
+      if (assignments.length + mas.dafim > MAX_ASSIGNMENTS) {
         showToast('אין מקום מספיק עבור מסכת זו!', 'error');
         closeModal({ target: {}, currentTarget: {} });
         return;
@@ -1031,7 +1032,7 @@
         btn.textContent = 'משבץ...';
       }
       
-      const availableSlots = Math.max(999 - assignments.length, 0);
+      const availableSlots = Math.max(MAX_ASSIGNMENTS - assignments.length, 0);
       const allowedDafim = dafim.slice(0, Math.min(dafim.length, availableSlots));
       if (allowedDafim.length < dafim.length) {
         showToast('הגעת למגבלת 999 שיבוצים!', 'error');
@@ -1170,7 +1171,7 @@
         </div>
       `);
       
-      const availableSlots = Math.max(999 - assignments.length, 0);
+      const availableSlots = Math.max(MAX_ASSIGNMENTS - assignments.length, 0);
       const allowedDafim = dafimToAssign.slice(0, Math.min(dafimToAssign.length, availableSlots));
       if (allowedDafim.length < dafimToAssign.length) {
         showToast('הגעת למגבלת 999 שיבוצים!', 'error');
@@ -1219,7 +1220,7 @@
         closeModal({ target: {}, currentTarget: {} });
         return;
       }
-      if (assignments.length >= 999) {
+      if (assignments.length >= MAX_ASSIGNMENTS) {
         showToast('הגעת למגבלת 999 שיבוצים!', 'error');
         return;
       }
