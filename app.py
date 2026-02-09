@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import sqlite3
@@ -240,10 +241,10 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._serve_ics(parsed)
             return
         if path == "/dafdaf":
-            self._serve_backup_page(parsed)
+            self._serve_backup_page()
             return
         if path == "/dafdaf/export":
-            self._serve_backup_export(parsed)
+            self._serve_backup_export()
             return
         if path == "/יחד אחים.png":
             self._serve_file(BASE_DIR / "יחד אחים.png", "image/png")
@@ -346,36 +347,9 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(content)
 
-    def _serve_backup_page(self, parsed) -> None:
-        params = parse_qs(parsed.query)
-        if not self._is_backup_authorized(parsed):
-            self._send_html(
-                """
-                <!DOCTYPE html>
-                <html lang="he" dir="rtl">
-                  <head>
-                    <meta charset="UTF-8">
-                    <title>גישה מוגנת</title>
-                    <style>
-                      body { font-family: Arial, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
-                      .card { background: #1e293b; padding: 32px; border-radius: 16px; width: 100%; max-width: 360px; box-shadow: 0 10px 30px rgba(0,0,0,0.4); }
-                      input { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: #fff; }
-                      button { width: 100%; margin-top: 12px; padding: 12px; border-radius: 10px; border: none; background: #f59e0b; color: #0f172a; font-weight: bold; cursor: pointer; }
-                    </style>
-                  </head>
-                  <body>
-                    <form class="card" method="get" action="/dafdaf">
-                      <h2>גישה לגיבוי</h2>
-                      <p>הזן סיסמה כדי להמשיך.</p>
-                      <input type="password" name="password" placeholder="סיסמה" required>
-                      <button type="submit">כניסה</button>
-                    </form>
-                  </body>
-                </html>
-                """
-            )
+    def _serve_backup_page(self) -> None:
+        if not self._require_backup_auth():
             return
-        password = self._get_query_value(params, "password", "")
         self._send_html(
             f"""
             <!DOCTYPE html>
@@ -396,17 +370,16 @@ class RequestHandler(BaseHTTPRequestHandler):
                 <div class="card">
                   <h2>יצוא נתונים</h2>
                   <p class="muted">הורד קובץ גיבוי JSON לכל השיבוצים.</p>
-                  <a href="/dafdaf/export?password={password}">הורד גיבוי</a>
+                  <a href="/dafdaf/export">הורד גיבוי</a>
                 </div>
                 <div class="card">
                   <h2>יבוא נתונים</h2>
-                  <p class="muted">הדבק כאן קובץ JSON מהגיבוי ולחץ על "יבא".</p>
+                  <p class="muted">הדבק כאן קובץ JSON מהגיבוי ולחץ על "ייבא".</p>
                   <textarea id="import-data" placeholder='[{{"masechet":"ברכות","daf":2,"name":"...","dedication":"","learned":false,"is_full_masechet":false}}]'></textarea>
-                  <button type="button" onclick="importData()">יבא נתונים</button>
+                  <button type="button" onclick="importData()">ייבא נתונים</button>
                   <div id="import-status" class="status"></div>
                 </div>
                 <script>
-                  const password = new URLSearchParams(window.location.search).get('password') || '';
                   async function importData() {{
                     const statusEl = document.getElementById('import-status');
                     statusEl.textContent = '';
@@ -422,7 +395,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                       statusEl.textContent = 'JSON לא תקין.';
                       return;
                     }}
-                    const response = await fetch(`/dafdaf/import?password=${{encodeURIComponent(password)}}`, {{
+                    const response = await fetch('/dafdaf/import', {{
                       method: 'POST',
                       headers: {{ 'Content-Type': 'application/json' }},
                       body: JSON.stringify(payload)
@@ -440,9 +413,8 @@ class RequestHandler(BaseHTTPRequestHandler):
             """
         )
 
-    def _serve_backup_export(self, parsed) -> None:
-        if not self._is_backup_authorized(parsed):
-            self.send_error(403, "Forbidden")
+    def _serve_backup_export(self) -> None:
+        if not self._require_backup_auth():
             return
         payload = store.list_assignments()
         body = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
@@ -457,9 +429,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _handle_backup_import(self) -> None:
-        parsed = urlparse(self.path)
-        if not self._is_backup_authorized(parsed):
-            self.send_error(403, "Forbidden")
+        if not self._require_backup_auth():
             return
         try:
             payload = self._read_json_any()
@@ -587,10 +557,25 @@ class RequestHandler(BaseHTTPRequestHandler):
             return default
         return value[0] or default
 
-    @staticmethod
-    def _is_backup_authorized(parsed) -> bool:
-        params = parse_qs(parsed.query)
-        return RequestHandler._get_query_value(params, "password", "") == BACKUP_PASSWORD
+    def _is_backup_authorized(self) -> bool:
+        auth_header = self.headers.get("Authorization", "")
+        if not auth_header.startswith("Basic "):
+            return False
+        encoded = auth_header.split(" ", 1)[1]
+        try:
+            decoded = base64.b64decode(encoded).decode("utf-8")
+        except (ValueError, UnicodeDecodeError):
+            return False
+        _, _, password = decoded.partition(":")
+        return password == BACKUP_PASSWORD
+
+    def _require_backup_auth(self) -> bool:
+        if self._is_backup_authorized():
+            return True
+        self.send_response(401)
+        self.send_header("WWW-Authenticate", 'Basic realm="Daf Backup"')
+        self.end_headers()
+        return False
 
     @staticmethod
     def _parse_date_param(params: dict, key: str, default_value: date) -> date:
