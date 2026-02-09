@@ -223,6 +223,7 @@
     ];
 
     const TOTAL_DAFIM = 2711;
+    const MAX_ASSIGNMENT_LIMIT = 999;
 
     let assignments = [];
     let currentMasechet = null;
@@ -256,6 +257,179 @@
     function formatDafNumber(num) {
       const letters = ['', 'א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ז', 'ח', 'ט', 'י', 'יא', 'יב', 'יג', 'יד', 'טו', 'טז', 'יז', 'יח', 'יט', 'כ', 'כא', 'כב', 'כג', 'כד', 'כה', 'כו', 'כז', 'כח', 'כט', 'ל', 'לא', 'לב', 'לג', 'לד', 'לה', 'לו', 'לז', 'לח', 'לט', 'מ', 'מא', 'מב', 'מג', 'מד', 'מה', 'מו', 'מז', 'מח', 'מט', 'נ', 'נא', 'נב', 'נג', 'נד', 'נה', 'נו', 'נז', 'נח', 'נט', 'ס', 'סא', 'סב', 'סג', 'סד', 'סה', 'סו', 'סז', 'סח', 'סט', 'ע', 'עא', 'עב', 'עג', 'עד', 'עה', 'עו', 'עז', 'עח', 'עט', 'פ', 'פא', 'פב', 'פג', 'פד', 'פה', 'פו', 'פז', 'פח', 'פט', 'צ', 'צא', 'צב', 'צג', 'צד', 'צה', 'צו', 'צז', 'צח', 'צט', 'ק', 'קא', 'קב', 'קג', 'קד', 'קה', 'קו', 'קז', 'קח', 'קט', 'קי', 'קיא', 'קיב', 'קיג', 'קיד', 'קטו', 'קטז', 'קיז', 'קיח', 'קיט', 'קכ', 'קכא', 'קכב', 'קכג', 'קכד', 'קכה', 'קכו', 'קכז', 'קכח', 'קכט', 'קל', 'קלא', 'קלב', 'קלג', 'קלד', 'קלה', 'קלו', 'קלז', 'קלח', 'קלט', 'קם', 'קמא', 'קמב', 'קמג', 'קמד', 'קמה', 'קמו', 'קמז', 'קמח', 'קמט', 'קנ', 'קנא', 'קנב', 'קנג', 'קנד', 'קנה', 'קנו', 'קנז', 'קנח', 'קנט', 'קס', 'קסא', 'קסב', 'קסג', 'קסד', 'קסה', 'קסו', 'קסז', 'קסח', 'קסט', 'קע', 'קעא', 'קעב', 'קעג', 'קעד', 'קעה', 'קעו'];
       return letters[num] || num.toString();
+    }
+
+    function formatIcsDate(date) {
+      const year = date.getFullYear();
+      const month = `${date.getMonth() + 1}`.padStart(2, '0');
+      const day = `${date.getDate()}`.padStart(2, '0');
+      return `${year}${month}${day}`;
+    }
+
+    function buildDafRanges(dafNumbers) {
+      if (!dafNumbers.length) return [];
+      const ranges = [];
+      let start = dafNumbers[0];
+      let previous = dafNumbers[0];
+      for (let i = 1; i < dafNumbers.length; i += 1) {
+        const current = dafNumbers[i];
+        if (current === previous + 1) {
+          previous = current;
+          continue;
+        }
+        ranges.push({ start, end: previous });
+        start = current;
+        previous = current;
+      }
+      ranges.push({ start, end: previous });
+      return ranges;
+    }
+
+    function formatRanges(ranges) {
+      return ranges.map(range => {
+        if (range.start === range.end) {
+          return formatDafNumber(range.start);
+        }
+        return `${formatDafNumber(range.start)}-${formatDafNumber(range.end)}`;
+      }).join(', ');
+    }
+
+    function buildAssignmentDetails(assignmentsList) {
+      const grouped = {};
+      assignmentsList.forEach(item => {
+        if (!grouped[item.masechet]) {
+          grouped[item.masechet] = [];
+        }
+        grouped[item.masechet].push(item.daf);
+      });
+      const lines = Object.entries(grouped).map(([masechet, dafs]) => {
+        const unique = [...new Set(dafs)].sort((a, b) => a - b);
+        const ranges = buildDafRanges(unique);
+        return `מסכת ${masechet} דפים ${formatRanges(ranges)}`;
+      });
+      return {
+        lines,
+        html: lines.map(line => `<div>${line}</div>`).join(''),
+        text: lines.join('\n')
+      };
+    }
+
+    function buildSuccessText(successData) {
+      const header = 'הרשמתך בוצעה בהצלחה!';
+      const nameLine = successData.name ? `שם: ${successData.name}` : '';
+      const lines = [header, nameLine, 'עליך ללמוד:', successData.details.text].filter(Boolean);
+      return lines.join('\n');
+    }
+
+    function buildCalendarPayload() {
+      const successData = window.assignmentSuccessData;
+      if (!successData) return null;
+      const title = successData.name ? `לימוד דפים - ${successData.name}` : 'לימוד דפים';
+      const detailsLines = [];
+      if (successData.name) {
+        detailsLines.push(`שם: ${successData.name}`);
+      }
+      detailsLines.push('עליך ללמוד:');
+      detailsLines.push(successData.details.text);
+      return {
+        title,
+        details: detailsLines.join('\n'),
+        start: formatIcsDate(successData.startDate),
+        end: formatIcsDate(successData.endDate)
+      };
+    }
+
+    function showAssignmentSuccess(name, assignmentsList) {
+      const details = buildAssignmentDetails(assignmentsList);
+      const startDate = new Date();
+      const endDate = new Date();
+      endDate.setDate(startDate.getDate() + 1);
+      const successData = { name, details, startDate, endDate };
+      successData.shareText = buildSuccessText(successData);
+      window.assignmentSuccessData = successData;
+      showModal(`
+        <div class="p-6">
+          <h3 class="text-lg font-bold text-emerald-400 mb-2">הרשמתך בוצעה בהצלחה!</h3>
+          <p class="text-slate-300 text-sm mb-3">עליך ללמוד:</p>
+          <div class="bg-slate-700/60 rounded-xl p-3 text-sm text-white space-y-1">
+            ${details.html}
+          </div>
+          <div class="grid grid-cols-5 gap-3 mt-4 text-xs text-center">
+            <button type="button" onclick="openGoogleCalendar()" title="הוסף ליומן גוגל" aria-label="הוסף ליומן גוגל"
+              class="flex flex-col items-center gap-1 text-slate-300 hover:text-white transition-colors">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10m-11 5h12a2 2 0 002-2V7a2 2 0 00-2-2H6a2 2 0 00-2 2v9a2 2 0 002 2z"/></svg>
+              <span class="text-[10px]">Google</span>
+            </button>
+            <button type="button" onclick="downloadAppleCalendar()" title="הוסף ליומן אפל" aria-label="הוסף ליומן אפל"
+              class="flex flex-col items-center gap-1 text-slate-300 hover:text-white transition-colors">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6M7 4h10a2 2 0 012 2v12a2 2 0 01-2 2H7a2 2 0 01-2-2V6a2 2 0 012-2z"/></svg>
+              <span class="text-[10px]">Apple</span>
+            </button>
+            <button type="button" onclick="openEmailReminder()" title="שלח תזכורת במייל" aria-label="שלח תזכורת במייל"
+              class="flex flex-col items-center gap-1 text-slate-300 hover:text-white transition-colors">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l9 6 9-6m-18 8h18a2 2 0 002-2V6a2 2 0 00-2-2H3a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+              <span class="text-[10px]">מייל</span>
+            </button>
+            <button type="button" onclick="openWhatsAppShare()" title="שלח בוואטסאפ" aria-label="שלח בוואטסאפ"
+              class="flex flex-col items-center gap-1 text-slate-300 hover:text-white transition-colors">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16.862 14.22c-.258.816-1.532 1.587-2.217 1.658-.646.067-1.465.095-2.36-.108-.543-.124-1.24-.4-2.137-.88-3.756-2.02-6.208-5.414-6.392-5.64-.175-.218-1.51-2.007-1.51-3.829 0-1.822.97-2.717 1.342-3.084.37-.367.808-.456 1.078-.456.27 0 .539.003.775.015.25.012.588-.095.92.703.34.827 1.162 2.86 1.266 3.067.103.207.172.456.034.742-.136.285-.205.462-.4.712-.195.25-.412.558-.588.75-.194.213-.395.444-.17.874.224.43 1.002 1.655 2.15 2.68 1.48 1.327 2.73 1.74 3.16 1.93.43.19.68.16.936-.096.256-.256 1.07-1.247 1.355-1.673.285-.426.57-.355.96-.21.39.146 2.47 1.17 2.894 1.382.425.212.71.317.815.493.103.175.103 1.022-.155 1.84z"/></svg>
+              <span class="text-[10px]">וואטסאפ</span>
+            </button>
+            <button type="button" onclick="copyAssignmentText()" title="העתק טקסט" aria-label="העתק טקסט"
+              class="flex flex-col items-center gap-1 text-slate-300 hover:text-white transition-colors">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16h8m-8-4h8m-2-8H8a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V8l-4-4z"/></svg>
+              <span class="text-[10px]">העתק</span>
+            </button>
+          </div>
+          <button type="button" onclick="closeModal(event)" class="mt-4 w-full bg-slate-600 hover:bg-slate-500 text-white font-semibold py-2 px-4 rounded-xl transition-all">
+            סגור
+          </button>
+        </div>
+      `);
+    }
+
+    function openGoogleCalendar() {
+      const payload = buildCalendarPayload();
+      if (!payload) return;
+      const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(payload.title)}&details=${encodeURIComponent(payload.details)}&dates=${payload.start}/${payload.end}`;
+      window.open(url, '_blank');
+    }
+
+    function downloadAppleCalendar() {
+      const payload = buildCalendarPayload();
+      if (!payload) return;
+      const url = `/api/calendar/ics?title=${encodeURIComponent(payload.title)}&details=${encodeURIComponent(payload.details)}&start=${payload.start}&end=${payload.end}`;
+      window.location.href = url;
+    }
+
+    function openEmailReminder() {
+      const payload = buildCalendarPayload();
+      if (!payload) return;
+      const url = `mailto:?subject=${encodeURIComponent(payload.title)}&body=${encodeURIComponent(payload.details)}`;
+      window.location.href = url;
+    }
+
+    function openWhatsAppShare() {
+      const successData = window.assignmentSuccessData;
+      if (!successData) return;
+      const url = `https://wa.me/?text=${encodeURIComponent(successData.shareText)}`;
+      window.open(url, '_blank');
+    }
+
+    async function copyAssignmentText() {
+      const successData = window.assignmentSuccessData;
+      if (!successData) return;
+      try {
+        if (!navigator.clipboard?.writeText) {
+          showToast('לא ניתן להעתיק', 'error');
+          return;
+        }
+        await navigator.clipboard.writeText(successData.shareText);
+        showToast('הטקסט הועתק!');
+      } catch (error) {
+        console.error(error);
+        showToast('לא ניתן להעתיק', 'error');
+      }
     }
 
     function showToast(message, type = 'success') {
@@ -723,31 +897,31 @@
       `);
       
       // Check limit
-      if (assignments.length + mas.dafim > 999) {
+      if (assignments.length + mas.dafim > MAX_ASSIGNMENT_LIMIT) {
         showToast('אין מקום מספיק עבור מסכת זו!', 'error');
         closeModal({ target: {}, currentTarget: {} });
         return;
       }
       
-      // Create individual records for each daf
+      const records = [];
       for (let daf = 2; daf <= mas.dafim + 1; daf++) {
-        const result = await window.dataSdk.create({
+        records.push({
           masechet: masechet,
           daf: daf,
           name: name,
           dedication: dedication,
           learned: false,
           is_full_masechet: true
-        }, { skipRefresh: true });
-        
-        if (!result.isOk) {
-          showToast('שגיאה בשיבוץ', 'error');
-          break;
-        }
+        });
       }
-      await refreshAssignments();
-      closeModal({ target: {}, currentTarget: {} });
-      showToast(`${masechet} שובצה בהצלחה!`);
+      const result = await window.dataSdk.createBulk(records, { skipRefresh: true });
+      if (result.isOk) {
+        await refreshAssignments();
+        showAssignmentSuccess(name, records);
+      } else {
+        closeModal({ target: {}, currentTarget: {} });
+        showToast('שגיאה בשיבוץ', 'error');
+      }
     }
 
     function openAutoAssignPages() {
@@ -858,33 +1032,31 @@
         btn.textContent = 'משבץ...';
       }
       
-      let createdCount = 0;
-      for (const d of dafim) {
-        if (assignments.length + createdCount >= 999) {
-          showToast('הגעת למגבלת 999 שיבוצים!', 'error');
-          break;
-        }
-        
-        const result = await window.dataSdk.create({
-          masechet: d.masechet,
-          daf: d.daf,
-          name: name,
-          dedication: dedication,
-          learned: false,
-          is_full_masechet: false
-        }, { skipRefresh: true });
-        
-        if (!result.isOk) {
-          showToast('שגיאה בשיבוץ', 'error');
-          break;
-        }
-        createdCount += 1;
+      const availableSlots = Math.max(MAX_ASSIGNMENT_LIMIT - assignments.length, 0);
+      const allowedDafim = dafim.slice(0, Math.min(dafim.length, availableSlots));
+      if (allowedDafim.length < dafim.length) {
+        showToast(`הגעת למגבלת ${MAX_ASSIGNMENT_LIMIT} שיבוצים!`, 'error');
       }
-      if (createdCount > 0) {
+      if (allowedDafim.length === 0) {
+        closeModal({ target: { }, currentTarget: { } });
+        return;
+      }
+      const records = allowedDafim.map(d => ({
+        masechet: d.masechet,
+        daf: d.daf,
+        name: name,
+        dedication: dedication,
+        learned: false,
+        is_full_masechet: false
+      }));
+      const result = await window.dataSdk.createBulk(records, { skipRefresh: true });
+      if (result.isOk) {
         await refreshAssignments();
+        showAssignmentSuccess(name, records);
+      } else {
+        closeModal({ target: { }, currentTarget: { } });
+        showToast('שגיאה בשיבוץ', 'error');
       }
-      closeModal({ target: { }, currentTarget: { } });
-      showToast(`שובצו ${dafim.length} דפים בהצלחה!`);
     }
 
     // ========== RANGE ASSIGN ==========
@@ -999,33 +1171,31 @@
         </div>
       `);
       
-      let createdCount = 0;
-      for (const daf of dafimToAssign) {
-        if (assignments.length + createdCount >= 999) {
-          showToast('הגעת למגבלת 999 שיבוצים!', 'error');
-          break;
-        }
-        
-        const result = await window.dataSdk.create({
-          masechet: masechet,
-          daf: daf,
-          name: name,
-          dedication: dedication,
-          learned: false,
-          is_full_masechet: false
-        }, { skipRefresh: true });
-        
-        if (!result.isOk) {
-          showToast('שגיאה בשיבוץ', 'error');
-          break;
-        }
-        createdCount += 1;
+      const availableSlots = Math.max(MAX_ASSIGNMENT_LIMIT - assignments.length, 0);
+      const allowedDafim = dafimToAssign.slice(0, Math.min(dafimToAssign.length, availableSlots));
+      if (allowedDafim.length < dafimToAssign.length) {
+        showToast(`הגעת למגבלת ${MAX_ASSIGNMENT_LIMIT} שיבוצים!`, 'error');
       }
-      if (createdCount > 0) {
+      if (allowedDafim.length === 0) {
+        closeModal({ target: {}, currentTarget: {} });
+        return;
+      }
+      const records = allowedDafim.map(daf => ({
+        masechet: masechet,
+        daf: daf,
+        name: name,
+        dedication: dedication,
+        learned: false,
+        is_full_masechet: false
+      }));
+      const result = await window.dataSdk.createBulk(records, { skipRefresh: true });
+      if (result.isOk) {
         await refreshAssignments();
+        showAssignmentSuccess(name, records);
+      } else {
+        closeModal({ target: {}, currentTarget: {} });
+        showToast('שגיאה בשיבוץ', 'error');
       }
-      closeModal({ target: {}, currentTarget: {} });
-      showToast(`שובצו ${dafimToAssign.length} דפים בהצלחה!`);
     }
 
     // ========== CRUD OPERATIONS ==========
@@ -1047,29 +1217,29 @@
             showToast('שגיאה בעדכון', 'error');
           }
         }
-      } else {
-        if (assignments.length >= 999) {
-          showToast('הגעת למגבלת 999 שיבוצים!', 'error');
-          return;
-        }
-        
-        const result = await window.dataSdk.create({
-          masechet: masechet,
-          daf: daf,
-          name: name,
-          dedication: dedication,
-          learned: false,
-          is_full_masechet: false
-        });
-        
-        if (result.isOk) {
-          showToast('הדף שובץ בהצלחה!');
-        } else {
-          showToast('שגיאה בשיבוץ', 'error');
-        }
+        closeModal({ target: {}, currentTarget: {} });
+        return;
+      }
+      if (assignments.length >= MAX_ASSIGNMENT_LIMIT) {
+        showToast(`הגעת למגבלת ${MAX_ASSIGNMENT_LIMIT} שיבוצים!`, 'error');
+        return;
       }
       
-      closeModal({ target: {}, currentTarget: {} });
+      const result = await window.dataSdk.create({
+        masechet: masechet,
+        daf: daf,
+        name: name,
+        dedication: dedication,
+        learned: false,
+        is_full_masechet: false
+      });
+      
+      if (result.isOk) {
+        showAssignmentSuccess(name, [{ masechet, daf }]);
+      } else {
+        showToast('שגיאה בשיבוץ', 'error');
+        closeModal({ target: {}, currentTarget: {} });
+      }
     }
 
     async function toggleLearnedModal(masechet, daf) {
@@ -1177,6 +1347,29 @@
           });
           if (!response.ok) {
             logHttpError('Create assignment', response);
+            return { isOk: false };
+          }
+          if (!options.skipRefresh) {
+            await refreshAssignments();
+          }
+          return { isOk: true };
+        } catch (error) {
+          console.error(error);
+          return { isOk: false };
+        }
+      },
+      async createBulk(records, options = {}) {
+        if (!Array.isArray(records) || records.length === 0) {
+          return { isOk: false };
+        }
+        try {
+          const response = await fetch('/api/assignments', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ assignments: records })
+          });
+          if (!response.ok) {
+            logHttpError('Create assignments', response);
             return { isOk: false };
           }
           if (!options.skipRefresh) {

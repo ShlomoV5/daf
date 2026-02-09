@@ -1,15 +1,19 @@
+import base64
 import json
 import os
 import sqlite3
+import uuid
+from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 
 BASE_DIR = Path(__file__).resolve().parent
 HTML_PATH = BASE_DIR / "base.html"
 DB_PATH = os.environ.get("DB_PATH", str(BASE_DIR / "assignments.db"))
 MAX_CONTENT_LENGTH = 1_000_000
+BACKUP_PASSWORD = os.environ.get("BACKUP_PASSWORD", "123123")
 
 
 class PayloadTooLargeError(Exception):
@@ -57,24 +61,32 @@ class AssignmentStore:
         return self._row_to_dict(row) if row else None
 
     def create_assignment(self, payload: dict) -> dict:
-        record = self._parse_payload(payload, require_fields=True)
+        records = self.create_assignments([payload])
+        return records[0]
+
+    def create_assignments(self, payloads: list[dict]) -> list[dict]:
+        if not payloads or not isinstance(payloads, list):
+            raise ValueError("Missing required fields")
+        records = [self._parse_payload(payload, require_fields=True) for payload in payloads]
+        assignment_ids = []
         with self._get_connection() as connection:
-            cursor = connection.execute(
-                """
-                INSERT INTO assignments (masechet, daf, name, dedication, learned, is_full_masechet)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    record["masechet"],
-                    record["daf"],
-                    record["name"],
-                    record.get("dedication"),
-                    int(record.get("learned", False)),
-                    int(record.get("is_full_masechet", False)),
-                ),
-            )
-            assignment_id = cursor.lastrowid
-        return self.get_assignment(assignment_id)
+            for record in records:
+                cursor = connection.execute(
+                    """
+                    INSERT INTO assignments (masechet, daf, name, dedication, learned, is_full_masechet)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        record["masechet"],
+                        record["daf"],
+                        record["name"],
+                        record.get("dedication"),
+                        int(record.get("learned", False)),
+                        int(record.get("is_full_masechet", False)),
+                    ),
+                )
+                assignment_ids.append(cursor.lastrowid)
+        return self._get_assignments_by_ids(assignment_ids)
 
     def update_assignment(self, assignment_id: int, payload: dict) -> dict | None:
         existing = self.get_assignment(assignment_id)
@@ -108,6 +120,29 @@ class AssignmentStore:
             )
         return cursor.rowcount > 0
 
+    def replace_assignments(self, payloads: list[dict]) -> int:
+        if payloads is None or not isinstance(payloads, list):
+            raise ValueError("Missing required fields")
+        records = [self._parse_payload(payload, require_fields=True) for payload in payloads]
+        with self._get_connection() as connection:
+            connection.execute("DELETE FROM assignments")
+            for record in records:
+                connection.execute(
+                    """
+                    INSERT INTO assignments (masechet, daf, name, dedication, learned, is_full_masechet)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        record["masechet"],
+                        record["daf"],
+                        record["name"],
+                        record.get("dedication"),
+                        int(record.get("learned", False)),
+                        int(record.get("is_full_masechet", False)),
+                    ),
+                )
+        return len(records)
+
     def _get_connection(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.db_path)
         connection.row_factory = sqlite3.Row
@@ -126,6 +161,19 @@ class AssignmentStore:
             "learned": bool(row["learned"]),
             "is_full_masechet": bool(row["is_full_masechet"]),
         }
+
+    def _get_assignments_by_ids(self, assignment_ids: list[int]) -> list[dict]:
+        if not assignment_ids:
+            return []
+        placeholders = ",".join(["?"] * len(assignment_ids))
+        with self._get_connection() as connection:
+            query = (
+                "SELECT id, masechet, daf, name, dedication, learned, is_full_masechet "
+                "FROM assignments WHERE id IN ({}) ORDER BY id"
+            ).format(placeholders)
+            cursor = connection.execute(query, assignment_ids)
+            rows = cursor.fetchall()
+        return [self._row_to_dict(row) for row in rows]
 
     @staticmethod
     def _parse_payload(
@@ -189,12 +237,24 @@ class RequestHandler(BaseHTTPRequestHandler):
         if path == "/api/assignments":
             self._send_json(store.list_assignments())
             return
+        if path == "/api/calendar/ics":
+            self._serve_ics(parsed)
+            return
+        if path == "/dafdaf":
+            self._serve_backup_page()
+            return
+        if path == "/dafdaf/export":
+            self._serve_backup_export()
+            return
         if path == "/יחד אחים.png":
             self._serve_file(BASE_DIR / "יחד אחים.png", "image/png")
             return
         self.send_error(404, "Not Found")
 
     def do_POST(self) -> None:
+        if self.path.startswith("/dafdaf/import"):
+            self._handle_backup_import()
+            return
         if self.path != "/api/assignments":
             self.send_error(404, "Not Found")
             return
@@ -207,7 +267,13 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._send_json({"error": "Invalid JSON"}, status=400)
             return
         try:
-            record = store.create_assignment(payload)
+            assignments_payload = payload.get("assignments")
+            if assignments_payload is not None:
+                if not isinstance(assignments_payload, list):
+                    raise ValueError("Invalid assignments payload")
+                record = store.create_assignments(assignments_payload)
+            else:
+                record = store.create_assignment(payload)
         except ValueError:
             self._send_json({"error": "Missing required fields"}, status=400)
             return
@@ -281,6 +347,141 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(content)
 
+    def _serve_backup_page(self) -> None:
+        if not self._require_backup_auth():
+            return
+        self._send_html(
+            f"""
+            <!DOCTYPE html>
+            <html lang="he" dir="rtl">
+              <head>
+                <meta charset="UTF-8">
+                <title>גיבוי נתונים</title>
+                <style>
+                  body {{ font-family: Arial, sans-serif; background: #0f172a; color: #f8fafc; padding: 32px; }}
+                  .card {{ background: #1e293b; padding: 24px; border-radius: 16px; max-width: 720px; margin: 0 auto 24px; }}
+                  textarea {{ width: 100%; min-height: 220px; background: #0f172a; color: #fff; border: 1px solid #334155; border-radius: 10px; padding: 12px; }}
+                  button, a {{ display: inline-block; padding: 10px 16px; border-radius: 10px; background: #38bdf8; color: #0f172a; font-weight: bold; text-decoration: none; border: none; cursor: pointer; }}
+                  .muted {{ color: #94a3b8; font-size: 14px; }}
+                  .status {{ margin-top: 12px; font-size: 14px; }}
+                </style>
+              </head>
+              <body>
+                <div class="card">
+                  <h2>יצוא נתונים</h2>
+                  <p class="muted">הורד קובץ גיבוי JSON לכל השיבוצים.</p>
+                  <a href="/dafdaf/export">הורד גיבוי</a>
+                </div>
+                <div class="card">
+                  <h2>יבוא נתונים</h2>
+                  <p class="muted">הדבק כאן קובץ JSON מהגיבוי ולחץ על "ייבא".</p>
+                  <textarea id="import-data" placeholder='[{{"masechet":"ברכות","daf":2,"name":"...","dedication":"","learned":false,"is_full_masechet":false}}]'></textarea>
+                  <button type="button" onclick="importData()">ייבא נתונים</button>
+                  <div id="import-status" class="status"></div>
+                </div>
+                <script>
+                  async function importData() {{
+                    const statusEl = document.getElementById('import-status');
+                    statusEl.textContent = '';
+                    const raw = document.getElementById('import-data').value.trim();
+                    if (!raw) {{
+                      statusEl.textContent = 'אנא הדבק נתונים.';
+                      return;
+                    }}
+                    let payload;
+                    try {{
+                      payload = JSON.parse(raw);
+                    }} catch (error) {{
+                      statusEl.textContent = 'JSON לא תקין.';
+                      return;
+                    }}
+                    const response = await fetch('/dafdaf/import', {{
+                      method: 'POST',
+                      headers: {{ 'Content-Type': 'application/json' }},
+                      body: JSON.stringify(payload)
+                    }});
+                    if (response.ok) {{
+                      const data = await response.json();
+                      statusEl.textContent = `עודכנו ${{data.count ?? 0}} שיבוצים.`;
+                      return;
+                    }}
+                    statusEl.textContent = 'שגיאה ביבוא הנתונים.';
+                  }}
+                </script>
+              </body>
+            </html>
+            """
+        )
+
+    def _serve_backup_export(self) -> None:
+        if not self._require_backup_auth():
+            return
+        payload = store.list_assignments()
+        body = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header(
+            "Content-Disposition",
+            'attachment; filename="daf-assignments.json"',
+        )
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _handle_backup_import(self) -> None:
+        if not self._require_backup_auth():
+            return
+        try:
+            payload = self._read_json_any()
+        except PayloadTooLargeError:
+            self._send_json({"error": "Payload too large"}, status=413)
+            return
+        if payload is None:
+            self._send_json({"error": "Invalid JSON"}, status=400)
+            return
+        if isinstance(payload, dict) and "assignments" in payload:
+            assignments_payload = payload.get("assignments")
+        else:
+            assignments_payload = payload
+        if not isinstance(assignments_payload, list):
+            self._send_json({"error": "Invalid assignments payload"}, status=400)
+            return
+        try:
+            count = store.replace_assignments(assignments_payload)
+        except ValueError:
+            self._send_json({"error": "Missing required fields"}, status=400)
+            return
+        except sqlite3.IntegrityError:
+            self._send_json({"error": "Assignment already exists"}, status=409)
+            return
+        self._send_json({"ok": True, "count": count})
+
+    def _send_html(self, content: str, *, status: int = 200) -> None:
+        body = content.encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _serve_ics(self, parsed) -> None:
+        params = parse_qs(parsed.query)
+        title = self._get_query_value(params, "title", "לימוד דפים")
+        details = self._get_query_value(params, "details", "")
+        start_date = self._parse_date_param(params, "start", date.today())
+        end_date = self._parse_date_param(params, "end", start_date + timedelta(days=1))
+        ics_payload = self._build_ics(title, details, start_date, end_date)
+        body = ics_payload.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/calendar; charset=utf-8")
+        self.send_header(
+            "Content-Disposition",
+            'attachment; filename="daf-assignment.ics"',
+        )
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def _read_json(self) -> dict | None:
         try:
             length = int(self.headers.get("Content-Length", "0"))
@@ -297,6 +498,94 @@ class RequestHandler(BaseHTTPRequestHandler):
         if not isinstance(payload, dict):
             return None
         return payload
+
+    def _read_json_any(self) -> dict | list | None:
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            return None
+        if length > MAX_CONTENT_LENGTH:
+            raise PayloadTooLargeError
+        if length <= 0:
+            return None
+        try:
+            payload = json.loads(self.rfile.read(length))
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(payload, (dict, list)):
+            return None
+        return payload
+
+    @staticmethod
+    def _escape_ics_text(value: str) -> str:
+        return (
+            str(value)
+            .replace("\\", "\\\\")
+            .replace(";", "\\;")
+            .replace(",", "\\,")
+            .replace("\n", "\\n")
+        )
+
+    def _build_ics(self, title: str, details: str, start_date: date, end_date: date) -> str:
+        uid = f"{uuid.uuid4()}@daf"
+        dtstamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+        start_value = start_date.strftime("%Y%m%d")
+        end_value = end_date.strftime("%Y%m%d")
+        return "\r\n".join(
+            [
+                "BEGIN:VCALENDAR",
+                "VERSION:2.0",
+                "PRODID:-//Daf//Assignments//HE",
+                "CALSCALE:GREGORIAN",
+                "BEGIN:VEVENT",
+                f"UID:{uid}",
+                f"DTSTAMP:{dtstamp}",
+                f"DTSTART;VALUE=DATE:{start_value}",
+                f"DTEND;VALUE=DATE:{end_value}",
+                f"SUMMARY:{self._escape_ics_text(title)}",
+                f"DESCRIPTION:{self._escape_ics_text(details)}",
+                "END:VEVENT",
+                "END:VCALENDAR",
+                "",
+            ]
+        )
+
+    @staticmethod
+    def _get_query_value(params: dict, key: str, default: str) -> str:
+        value = params.get(key, [""])
+        if not value:
+            return default
+        return value[0] or default
+
+    def _is_backup_authorized(self) -> bool:
+        auth_header = self.headers.get("Authorization", "")
+        if not auth_header.startswith("Basic "):
+            return False
+        encoded = auth_header.split(" ", 1)[1]
+        try:
+            decoded = base64.b64decode(encoded).decode("utf-8")
+        except (ValueError, UnicodeDecodeError):
+            return False
+        _, _, password = decoded.partition(":")
+        return password == BACKUP_PASSWORD
+
+    def _require_backup_auth(self) -> bool:
+        if self._is_backup_authorized():
+            return True
+        self.send_response(401)
+        self.send_header("WWW-Authenticate", 'Basic realm="Daf Backup"')
+        self.end_headers()
+        return False
+
+    @staticmethod
+    def _parse_date_param(params: dict, key: str, default_value: date) -> date:
+        value = params.get(key, [""])
+        if value and value[0]:
+            try:
+                return datetime.strptime(value[0], "%Y%m%d").date()
+            except ValueError:
+                return default_value
+        return default_value
 
     def _extract_id(self) -> int | None:
         try:
