@@ -1,0 +1,1093 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>שיבוץ דף יומי</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/_sdk/element_sdk.js"></script>
+  <script src="/_sdk/data_sdk.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    html { height: 100%; }
+    body { box-sizing: border-box; height: 100%; }
+    * { font-family: 'Heebo', sans-serif; }
+    .pixel { width: 8px; height: 8px; border-radius: 1px; }
+    .masechet-card:hover { transform: translateY(-2px); }
+    .daf-cell { 
+      width: 36px; 
+      height: 36px; 
+      font-size: 11px;
+      transition: all 0.15s ease;
+    }
+    .daf-cell:hover { transform: scale(1.1); z-index: 10; }
+    .modal-backdrop { background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); }
+    .toast { animation: slideIn 0.3s ease, fadeOut 0.3s ease 2.7s; }
+    @keyframes slideIn { from { transform: translateY(-100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    @keyframes fadeOut { to { opacity: 0; } }
+  </style>
+</head>
+<body class="h-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white overflow-auto">
+
+  <div id="app" class="w-full h-full">
+    <!-- Toast Container -->
+    <div id="toast-container" class="fixed top-4 left-4 right-4 z-50 flex flex-col gap-2"></div>
+
+    <!-- Header -->
+    <header class="bg-gradient-to-r from-amber-600 to-amber-700 shadow-lg sticky top-0 z-40">
+      <div class="max-w-4xl mx-auto px-4 py-4">
+        <h1 id="main-title" class="text-2xl font-bold text-center">שיבוץ דף יומי</h1>
+        <p id="main-subtitle" class="text-amber-100 text-center text-sm mt-1">השלמת הש״ס</p>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main id="main-content" class="max-w-4xl mx-auto px-4 py-6">
+      <!-- Home Screen -->
+      <div id="home-screen">
+        <!-- Stats Cards -->
+        <div class="grid grid-cols-3 gap-3 mb-6">
+          <div class="bg-slate-700/50 rounded-xl p-4 text-center border border-slate-600">
+            <div id="stat-total" class="text-2xl font-bold text-amber-400">2,711</div>
+            <div class="text-xs text-slate-400">סה״כ דפים</div>
+          </div>
+          <div class="bg-slate-700/50 rounded-xl p-4 text-center border border-slate-600">
+            <div id="stat-assigned" class="text-2xl font-bold text-blue-400">0</div>
+            <div class="text-xs text-slate-400">שובצו</div>
+          </div>
+          <div class="bg-slate-700/50 rounded-xl p-4 text-center border border-slate-600">
+            <div id="stat-learned" class="text-2xl font-bold text-emerald-400">0</div>
+            <div class="text-xs text-slate-400">נלמדו</div>
+          </div>
+        </div>
+
+        <!-- Progress Bar -->
+        <div class="bg-slate-700/50 rounded-xl p-4 mb-6 border border-slate-600">
+          <div class="flex justify-between text-sm mb-2">
+            <span class="text-slate-300">התקדמות כללית</span>
+            <span id="progress-percent" class="text-amber-400 font-semibold">0%</span>
+          </div>
+          <div class="h-3 bg-slate-600 rounded-full overflow-hidden">
+            <div id="progress-bar" class="h-full bg-gradient-to-r from-amber-500 to-emerald-500 transition-all duration-500" style="width: 0%"></div>
+          </div>
+        </div>
+
+        <!-- Pixel Map -->
+        <div class="bg-slate-700/50 rounded-xl p-4 mb-6 border border-slate-600">
+          <h3 class="text-sm font-semibold mb-3 text-slate-300">מפת הש״ס</h3>
+          <div id="pixel-map" class="flex flex-wrap gap-px justify-center"></div>
+          <div class="flex justify-center gap-4 mt-3 text-xs">
+            <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-slate-500"></span> פנוי</span>
+            <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-blue-500"></span> משובץ</span>
+            <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-emerald-500"></span> נלמד</span>
+          </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="grid grid-cols-3 gap-3 mb-6">
+          <button onclick="openAutoAssign()" class="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 text-white font-semibold py-4 px-4 rounded-xl transition-all shadow-lg flex flex-col items-center gap-1">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            <span class="text-sm">שבץ אותי</span>
+          </button>
+          <button onclick="openRangeAssign()" class="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white font-semibold py-4 px-4 rounded-xl transition-all shadow-lg flex flex-col items-center gap-1">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+            <span class="text-sm">שיבוץ טווח</span>
+          </button>
+          <button onclick="openMyPages()" class="bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 text-white font-semibold py-4 px-4 rounded-xl transition-all shadow-lg flex flex-col items-center gap-1">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <span class="text-sm">הדפים שלי</span>
+          </button>
+        </div>
+
+        <!-- Masechot List -->
+        <h3 class="text-lg font-semibold mb-3 text-slate-300">מסכתות</h3>
+        <div id="masechot-list" class="space-y-2"></div>
+      </div>
+
+      <!-- Masechet Screen (hidden by default) -->
+      <div id="masechet-screen" class="hidden">
+        <button onclick="goHome()" class="flex items-center gap-2 text-amber-400 mb-4 hover:text-amber-300 transition-colors">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+          חזרה לרשימה
+        </button>
+        
+        <div class="bg-slate-700/50 rounded-xl p-4 mb-4 border border-slate-600">
+          <h2 id="masechet-title" class="text-xl font-bold text-amber-400 mb-2"></h2>
+          <div class="flex gap-4 text-sm">
+            <span id="masechet-free" class="text-slate-400"></span>
+            <span id="masechet-assigned" class="text-blue-400"></span>
+            <span id="masechet-learned" class="text-emerald-400"></span>
+          </div>
+          <div class="h-2 bg-slate-600 rounded-full overflow-hidden mt-3">
+            <div id="masechet-progress" class="h-full bg-gradient-to-r from-blue-500 to-emerald-500 transition-all duration-300" style="width: 0%"></div>
+          </div>
+        </div>
+
+        <div id="daf-grid" class="grid grid-cols-7 sm:grid-cols-10 gap-1"></div>
+      </div>
+
+      <!-- My Pages Screen (hidden by default) -->
+      <div id="my-pages-screen" class="hidden">
+        <button onclick="goHome()" class="flex items-center gap-2 text-amber-400 mb-4 hover:text-amber-300 transition-colors">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+          חזרה לרשימה
+        </button>
+
+        <div class="bg-slate-700/50 rounded-xl p-4 mb-4 border border-slate-600">
+          <h2 class="text-xl font-bold text-amber-400 mb-3">בחר שם לצפייה בדפים</h2>
+          <select id="names-select" onchange="updateMyPagesView()" class="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-white focus:border-amber-500 focus:outline-none">
+            <option value="">-- בחר שם --</option>
+          </select>
+        </div>
+
+        <div id="my-pages-content" class="space-y-4"></div>
+      </div>
+    </main>
+
+    <!-- Modals -->
+    <div id="modal-container"></div>
+  </div>
+
+  <script>
+    // ========== DATA & CONFIG ==========
+    const MASECHOT_DATA = [
+      { seder: "זרעים", name: "ברכות", dafim: 63 },
+      { seder: "מועד", name: "שבת", dafim: 156 },
+      { seder: "מועד", name: "עירובין", dafim: 104 },
+      { seder: "מועד", name: "פסחים", dafim: 120 },
+      { seder: "מועד", name: "יומא", dafim: 87 },
+      { seder: "מועד", name: "סוכה", dafim: 55 },
+      { seder: "מועד", name: "ביצה", dafim: 39 },
+      { seder: "מועד", name: "ראש השנה", dafim: 34 },
+      { seder: "מועד", name: "תענית", dafim: 30 },
+      { seder: "מועד", name: "מגילה", dafim: 31 },
+      { seder: "מועד", name: "מועד קטן", dafim: 28 },
+      { seder: "מועד", name: "חגיגה", dafim: 27 },
+      { seder: "מועד", name: "שקלים", dafim: 21 },
+      { seder: "נשים", name: "יבמות", dafim: 121 },
+      { seder: "נשים", name: "כתובות", dafim: 111 },
+      { seder: "נשים", name: "נדרים", dafim: 91 },
+      { seder: "נשים", name: "נזיר", dafim: 66 },
+      { seder: "נשים", name: "סוטה", dafim: 49 },
+      { seder: "נשים", name: "גיטין", dafim: 90 },
+      { seder: "נשים", name: "קידושין", dafim: 82 },
+      { seder: "נזיקין", name: "בבא קמא", dafim: 119 },
+      { seder: "נזיקין", name: "בבא מציעא", dafim: 119 },
+      { seder: "נזיקין", name: "בבא בתרא", dafim: 176 },
+      { seder: "נזיקין", name: "סנהדרין", dafim: 113 },
+      { seder: "נזיקין", name: "מכות", dafim: 24 },
+      { seder: "נזיקין", name: "שבועות", dafim: 49 },
+      { seder: "נזיקין", name: "עבודה זרה", dafim: 76 },
+      { seder: "נזיקין", name: "הוריות", dafim: 14 },
+      { seder: "קדשים", name: "זבחים", dafim: 120 },
+      { seder: "קדשים", name: "מנחות", dafim: 110 },
+      { seder: "קדשים", name: "חולין", dafim: 142 },
+      { seder: "קדשים", name: "בכורות", dafim: 61 },
+      { seder: "קדשים", name: "ערכין", dafim: 34 },
+      { seder: "קדשים", name: "תמורה", dafim: 34 },
+      { seder: "קדשים", name: "כריתות", dafim: 28 },
+      { seder: "קדשים", name: "מעילה", dafim: 22 },
+      { seder: "קדשים", name: "תמיד", dafim: 9 },
+      { seder: "קדשים", name: "מדות", dafim: 4 },
+      { seder: "קדשים", name: "קנים", dafim: 4 },
+      { seder: "טהרות", name: "נדה", dafim: 73 }
+    ];
+
+    const TOTAL_DAFIM = 2711;
+
+    let assignments = [];
+    let currentMasechet = null;
+
+    const defaultConfig = {
+      site_title: "שיבוץ דף יומי",
+      site_subtitle: "השלמת הש״ס"
+    };
+
+    let config = { ...defaultConfig };
+
+    // ========== HELPER FUNCTIONS ==========
+    function getAssignment(masechet, daf) {
+      return assignments.find(a => a.masechet === masechet && a.daf === daf);
+    }
+
+    function getDafStatus(masechet, daf) {
+      const assignment = getAssignment(masechet, daf);
+      if (!assignment) return 'free';
+      return assignment.learned ? 'learned' : 'assigned';
+    }
+
+    function getStatusColor(status) {
+      switch(status) {
+        case 'free': return 'bg-slate-500';
+        case 'assigned': return 'bg-blue-500';
+        case 'learned': return 'bg-emerald-500';
+      }
+    }
+
+    function formatDafNumber(num) {
+      const letters = ['', 'א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ז', 'ח', 'ט', 'י', 'יא', 'יב', 'יג', 'יד', 'טו', 'טז', 'יז', 'יח', 'יט', 'כ', 'כא', 'כב', 'כג', 'כד', 'כה', 'כו', 'כז', 'כח', 'כט', 'ל', 'לא', 'לב', 'לג', 'לד', 'לה', 'לו', 'לז', 'לח', 'לט', 'מ', 'מא', 'מב', 'מג', 'מד', 'מה', 'מו', 'מז', 'מח', 'מט', 'נ', 'נא', 'נב', 'נג', 'נד', 'נה', 'נו', 'נז', 'נח', 'נט', 'ס', 'סא', 'סב', 'סג', 'סד', 'סה', 'סו', 'סז', 'סח', 'סט', 'ע', 'עא', 'עב', 'עג', 'עד', 'עה', 'עו', 'עז', 'עח', 'עט', 'פ', 'פא', 'פב', 'פג', 'פד', 'פה', 'פו', 'פז', 'פח', 'פט', 'צ', 'צא', 'צב', 'צג', 'צד', 'צה', 'צו', 'צז', 'צח', 'צט', 'ק', 'קא', 'קב', 'קג', 'קד', 'קה', 'קו', 'קז', 'קח', 'קט', 'קי', 'קיא', 'קיב', 'קיג', 'קיד', 'קטו', 'קטז', 'קיז', 'קיח', 'קיט', 'קכ', 'קכא', 'קכב', 'קכג', 'קכד', 'קכה', 'קכו', 'קכז', 'קכח', 'קכט', 'קל', 'קלא', 'קלב', 'קלג', 'קלד', 'קלה', 'קלו', 'קלז', 'קלח', 'קלט', 'קם', 'קמא', 'קמב', 'קמג', 'קמד', 'קמה', 'קמו', 'קמז', 'קמח', 'קמט', 'קנ', 'קנא', 'קנב', 'קנג', 'קנד', 'קנה', 'קנו', 'קנז', 'קנח', 'קנט', 'קס', 'קסא', 'קסב', 'קסג', 'קסד', 'קסה', 'קסו', 'קסז', 'קסח', 'קסט', 'קע', 'קעא', 'קעב', 'קעג', 'קעד', 'קעה', 'קעו'];
+      return letters[num] || num.toString();
+    }
+
+    function showToast(message, type = 'success') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      const bgColor = type === 'success' ? 'bg-emerald-600' : type === 'error' ? 'bg-red-600' : 'bg-blue-600';
+      toast.className = `toast ${bgColor} text-white px-4 py-3 rounded-lg shadow-lg text-sm font-medium text-center`;
+      toast.textContent = message;
+      container.appendChild(toast);
+      setTimeout(() => toast.remove(), 3000);
+    }
+
+    // ========== RENDER FUNCTIONS ==========
+    function renderStats() {
+      const assigned = assignments.length;
+      const learned = assignments.filter(a => a.learned).length;
+      
+      document.getElementById('stat-total').textContent = TOTAL_DAFIM.toLocaleString();
+      document.getElementById('stat-assigned').textContent = (assigned - learned).toLocaleString();
+      document.getElementById('stat-learned').textContent = learned.toLocaleString();
+      
+      const percent = Math.round((learned / TOTAL_DAFIM) * 100);
+      document.getElementById('progress-percent').textContent = `${percent}%`;
+      document.getElementById('progress-bar').style.width = `${(assigned / TOTAL_DAFIM) * 100}%`;
+    }
+
+    function renderPixelMap() {
+      const container = document.getElementById('pixel-map');
+      container.innerHTML = '';
+      
+      MASECHOT_DATA.forEach(mas => {
+        for (let daf = 2; daf <= mas.dafim + 1; daf++) {
+          const status = getDafStatus(mas.name, daf);
+          const pixel = document.createElement('div');
+          pixel.className = `pixel ${getStatusColor(status)}`;
+          pixel.title = `${mas.name} דף ${formatDafNumber(daf)}`;
+          container.appendChild(pixel);
+        }
+      });
+    }
+
+    function renderMasechotList() {
+      const container = document.getElementById('masechot-list');
+      container.innerHTML = '';
+      
+      let currentSeder = '';
+      MASECHOT_DATA.forEach(mas => {
+        if (mas.seder !== currentSeder) {
+          currentSeder = mas.seder;
+          const sederHeader = document.createElement('div');
+          sederHeader.className = 'text-sm font-semibold text-slate-500 mt-4 mb-2';
+          sederHeader.textContent = mas.seder;
+          container.appendChild(sederHeader);
+        }
+        
+        const masAssignments = assignments.filter(a => a.masechet === mas.name);
+        const learned = masAssignments.filter(a => a.learned).length;
+        const assigned = masAssignments.length - learned;
+        const free = mas.dafim - masAssignments.length;
+        const progress = (masAssignments.length / mas.dafim) * 100;
+        
+        const card = document.createElement('div');
+        card.className = 'masechet-card bg-slate-700/50 rounded-xl p-4 border border-slate-600 cursor-pointer transition-all hover:border-amber-500/50';
+        card.onclick = () => openMasechet(mas.name);
+        card.innerHTML = `
+          <div class="flex justify-between items-center mb-2">
+            <span class="font-semibold text-white">${mas.name}</span>
+            <span class="text-xs text-slate-400">${mas.dafim} דפים</span>
+          </div>
+          <div class="flex gap-3 text-xs mb-2">
+            <span class="text-slate-400">${free} פנוי</span>
+            <span class="text-blue-400">${assigned} משובץ</span>
+            <span class="text-emerald-400">${learned} נלמד</span>
+          </div>
+          <div class="h-1.5 bg-slate-600 rounded-full overflow-hidden">
+            <div class="h-full bg-gradient-to-r from-blue-500 to-emerald-500 transition-all" style="width: ${progress}%"></div>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function renderMasechetScreen() {
+      const mas = MASECHOT_DATA.find(m => m.name === currentMasechet);
+      if (!mas) return;
+      
+      const masAssignments = assignments.filter(a => a.masechet === mas.name);
+      const learned = masAssignments.filter(a => a.learned).length;
+      const assigned = masAssignments.length - learned;
+      const free = mas.dafim - masAssignments.length;
+      const progress = (masAssignments.length / mas.dafim) * 100;
+      
+      document.getElementById('masechet-title').textContent = mas.name;
+      document.getElementById('masechet-free').textContent = `${free} פנוי`;
+      document.getElementById('masechet-assigned').textContent = `${assigned} משובץ`;
+      document.getElementById('masechet-learned').textContent = `${learned} נלמד`;
+      document.getElementById('masechet-progress').style.width = `${progress}%`;
+      
+      const grid = document.getElementById('daf-grid');
+      grid.innerHTML = '';
+      
+      for (let daf = 2; daf <= mas.dafim + 1; daf++) {
+        const status = getDafStatus(mas.name, daf);
+        const assignment = getAssignment(mas.name, daf);
+        
+        const cell = document.createElement('div');
+        cell.className = `daf-cell rounded-lg flex items-center justify-center cursor-pointer font-medium ${getStatusColor(status)}`;
+        cell.textContent = formatDafNumber(daf);
+        cell.title = assignment ? `${assignment.name}${assignment.dedication ? ' - ' + assignment.dedication : ''}` : `דף ${formatDafNumber(daf)} - פנוי`;
+        cell.onclick = () => openDafModal(mas.name, daf);
+        
+        grid.appendChild(cell);
+      }
+    }
+
+    function renderMyPages() {
+      const namesSelect = document.getElementById('names-select');
+      const uniqueNames = [...new Set(assignments.map(a => a.name))].sort();
+      
+      namesSelect.innerHTML = '<option value="">-- בחר שם --</option>';
+      uniqueNames.forEach(name => {
+        const option = document.createElement('option');
+        option.value = name;
+        option.textContent = name;
+        namesSelect.appendChild(option);
+      });
+      
+      const content = document.getElementById('my-pages-content');
+      content.innerHTML = '';
+    }
+
+    function updateMyPagesView() {
+      const selectedName = document.getElementById('names-select').value;
+      const content = document.getElementById('my-pages-content');
+      content.innerHTML = '';
+      
+      if (!selectedName) return;
+      
+      const userAssignments = assignments.filter(a => a.name === selectedName);
+      
+      if (userAssignments.length === 0) {
+        content.innerHTML = '<div class="text-center text-slate-400 py-8">אין דפים לשם זה</div>';
+        return;
+      }
+      
+      // Check if there's a full masechet
+      const fullMasechet = userAssignments.find(a => a.is_full_masechet);
+      
+      if (fullMasechet) {
+        const mas = MASECHOT_DATA.find(m => m.name === fullMasechet.masechet);
+        const learnedCount = userAssignments.filter(a => a.masechet === fullMasechet.masechet && a.learned).length;
+        
+        const card = document.createElement('div');
+        card.className = 'bg-slate-700/50 rounded-xl p-4 border border-slate-600 mb-4';
+        
+        const progress = (learnedCount / mas.dafim) * 100;
+        
+        card.innerHTML = `
+          <div class="flex justify-between items-center mb-3">
+            <h3 class="font-bold text-amber-400">🏆 ${fullMasechet.masechet}</h3>
+            <span class="text-sm text-slate-400">${learnedCount}/${mas.dafim}</span>
+          </div>
+          <div class="h-2 bg-slate-600 rounded-full overflow-hidden mb-3">
+            <div class="h-full bg-gradient-to-r from-blue-500 to-emerald-500 transition-all" style="width: ${progress}%"></div>
+          </div>
+          ${fullMasechet.dedication ? `<p class="text-slate-400 text-sm mb-3">${fullMasechet.dedication}</p>` : ''}
+          <div class="grid grid-cols-6 gap-1" id="full-masechet-grid-view"></div>
+        `;
+        content.appendChild(card);
+        
+        const grid = document.getElementById('full-masechet-grid-view');
+        const masAssignments = userAssignments.filter(a => a.masechet === fullMasechet.masechet);
+        
+        for (let daf = 2; daf <= mas.dafim + 1; daf++) {
+          const assignment = masAssignments.find(a => a.daf === daf);
+          const cell = document.createElement('button');
+          cell.type = 'button';
+          cell.className = `w-full aspect-square rounded text-xs font-semibold transition-all ${assignment?.learned ? 'bg-emerald-500 text-white' : assignment ? 'bg-blue-500 text-white' : 'bg-slate-600 text-slate-400'}`;
+          cell.textContent = formatDafNumber(daf);
+          cell.onclick = (e) => {
+            e.preventDefault();
+            if (assignment) {
+              assignment.learned = !assignment.learned;
+              window.dataSdk.update(assignment).then(result => {
+                if (result.isOk) {
+                  updateMyPagesView();
+                }
+              });
+            }
+          };
+          grid.appendChild(cell);
+        }
+      } else {
+        // Regular single dafim
+        const byMasechet = {};
+        userAssignments.forEach(a => {
+          if (!byMasechet[a.masechet]) {
+            byMasechet[a.masechet] = [];
+          }
+          byMasechet[a.masechet].push(a);
+        });
+        
+        Object.entries(byMasechet).forEach(([masechet, items]) => {
+          items.forEach(item => {
+            const itemDiv = document.createElement('div');
+            itemDiv.className = `bg-slate-600/50 rounded-lg p-3 text-sm flex justify-between items-center ${item.learned ? 'opacity-60' : ''}`;
+            itemDiv.innerHTML = `
+              <div>
+                <span class="font-semibold">${masechet}</span>
+                <span class="text-slate-400 text-xs"> דף ${formatDafNumber(item.daf)}</span>
+                ${item.dedication ? `<div class="text-slate-400 text-xs mt-1">${item.dedication}</div>` : ''}
+              </div>
+              <button onclick="toggleLearned(${btoa(JSON.stringify(item))})" class="px-2 py-1 ${item.learned ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-blue-600 hover:bg-blue-500'} text-white rounded text-xs transition-all">
+                ${item.learned ? '✓' : '◯'}
+              </button>
+            `;
+            content.appendChild(itemDiv);
+          });
+        });
+      }
+    }
+
+    // ========== NAVIGATION ==========
+    function goHome() {
+      currentMasechet = null;
+      document.getElementById('home-screen').classList.remove('hidden');
+      document.getElementById('masechet-screen').classList.add('hidden');
+      document.getElementById('my-pages-screen').classList.add('hidden');
+      renderMasechotList();
+    }
+
+    function openMasechet(name) {
+      currentMasechet = name;
+      document.getElementById('home-screen').classList.add('hidden');
+      document.getElementById('masechet-screen').classList.remove('hidden');
+      document.getElementById('my-pages-screen').classList.add('hidden');
+      renderMasechetScreen();
+    }
+
+    function openMyPages() {
+      document.getElementById('home-screen').classList.add('hidden');
+      document.getElementById('masechet-screen').classList.add('hidden');
+      document.getElementById('my-pages-screen').classList.remove('hidden');
+      renderMyPages();
+    }
+
+    // ========== MODALS ==========
+    function showModal(content) {
+      const container = document.getElementById('modal-container');
+      container.innerHTML = `
+        <div class="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4" onclick="closeModal(event)">
+          <div class="bg-slate-800 rounded-2xl shadow-2xl w-full max-w-sm border border-slate-700 max-h-[80%] overflow-auto" onclick="event.stopPropagation()">
+            ${content}
+          </div>
+        </div>
+      `;
+    }
+
+    function closeModal(event) {
+      if (event && event.target !== event.currentTarget) return;
+      document.getElementById('modal-container').innerHTML = '';
+    }
+
+    function openDafModal(masechet, daf) {
+      const assignment = getAssignment(masechet, daf);
+      const status = getDafStatus(masechet, daf);
+      
+      if (status === 'free') {
+        showModal(`
+          <div class="p-6">
+            <h3 class="text-lg font-bold text-amber-400 mb-4">${masechet} דף ${formatDafNumber(daf)}</h3>
+            <p class="text-slate-400 mb-4">דף פנוי לשיבוץ</p>
+            <button onclick="openAssignForm('${masechet}', ${daf})" class="w-full bg-amber-600 hover:bg-amber-500 text-white font-semibold py-3 px-4 rounded-xl transition-all">
+              שבץ דף זה
+            </button>
+          </div>
+        `);
+      } else {
+        showModal(`
+          <div class="p-6">
+            <h3 class="text-lg font-bold text-amber-400 mb-2">${masechet} דף ${formatDafNumber(daf)}</h3>
+            <div class="bg-slate-700/50 rounded-xl p-4 mb-4">
+              <p class="font-semibold text-white mb-1">${assignment.name}</p>
+              ${assignment.dedication ? `<p class="text-slate-400 text-sm">${assignment.dedication}</p>` : ''}
+              <p class="text-sm mt-2 ${status === 'learned' ? 'text-emerald-400' : 'text-blue-400'}">
+                ${status === 'learned' ? '✓ נלמד' : 'משובץ'}
+              </p>
+            </div>
+            <div class="space-y-2">
+              <button onclick="openEditForm('${masechet}', ${daf})" class="w-full bg-slate-600 hover:bg-slate-500 text-white font-semibold py-3 px-4 rounded-xl transition-all">
+                ערוך פרטים
+              </button>
+              <button onclick="toggleLearnedModal('${masechet}', ${daf})" class="w-full ${status === 'learned' ? 'bg-blue-600 hover:bg-blue-500' : 'bg-emerald-600 hover:bg-emerald-500'} text-white font-semibold py-3 px-4 rounded-xl transition-all">
+                ${status === 'learned' ? 'בטל סימון נלמד' : 'סמן כנלמד'}
+              </button>
+              <button onclick="confirmDelete('${masechet}', ${daf})" class="w-full bg-red-600/20 hover:bg-red-600/30 text-red-400 font-semibold py-3 px-4 rounded-xl transition-all border border-red-600/30">
+                מחק שיבוץ
+              </button>
+            </div>
+          </div>
+        `);
+      }
+    }
+
+    function openAssignForm(masechet, daf, isEdit = false) {
+      const assignment = isEdit ? getAssignment(masechet, daf) : null;
+      
+      showModal(`
+        <div class="p-6">
+          <h3 class="text-lg font-bold text-amber-400 mb-4">
+            ${isEdit ? 'עריכת' : 'שיבוץ'} ${masechet} דף ${formatDafNumber(daf)}
+          </h3>
+          <form id="assign-form" class="space-y-4" onsubmit="event.preventDefault(); submitAssignment('${masechet}', ${daf}, ${isEdit})">
+            <div>
+              <label for="assign-name" class="block text-sm font-medium text-slate-300 mb-1">שם *</label>
+              <input type="text" id="assign-name" required value="${assignment?.name || ''}" 
+                class="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-white focus:border-amber-500 focus:outline-none">
+            </div>
+            <div>
+              <label for="assign-dedication" class="block text-sm font-medium text-slate-300 mb-1">הקדשה / הערה</label>
+              <textarea id="assign-dedication" rows="2"
+                class="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-white focus:border-amber-500 focus:outline-none resize-none"
+                placeholder="לעילוי נשמת / לרפואה שלמה...">${assignment?.dedication || ''}</textarea>
+            </div>
+            <button type="submit" class="w-full bg-amber-600 hover:bg-amber-500 text-white font-semibold py-3 px-4 rounded-xl transition-all">
+              ${isEdit ? 'שמור שינויים' : 'שבץ'}
+            </button>
+          </form>
+        </div>
+      `);
+    }
+
+    function openEditForm(masechet, daf) {
+      openAssignForm(masechet, daf, true);
+    }
+
+    function confirmDelete(masechet, daf) {
+      showModal(`
+        <div class="p-6 text-center">
+          <div class="w-16 h-16 bg-red-600/20 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg class="w-8 h-8 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+            </svg>
+          </div>
+          <h3 class="text-lg font-bold text-white mb-2">מחיקת שיבוץ</h3>
+          <p class="text-slate-400 mb-4">האם למחוק את השיבוץ של ${masechet} דף ${formatDafNumber(daf)}?</p>
+          <div class="flex gap-3">
+            <button onclick="closeModal(event)" class="flex-1 bg-slate-600 hover:bg-slate-500 text-white font-semibold py-3 px-4 rounded-xl transition-all">
+              ביטול
+            </button>
+            <button onclick="deleteAssignment('${masechet}', ${daf})" class="flex-1 bg-red-600 hover:bg-red-500 text-white font-semibold py-3 px-4 rounded-xl transition-all">
+              מחק
+            </button>
+          </div>
+        </div>
+      `);
+    }
+
+    // ========== AUTO ASSIGN ==========
+    function openAutoAssign() {
+      showModal(`
+        <div class="p-6">
+          <h3 class="text-lg font-bold text-amber-400 mb-4">שבץ אותי בעצמך</h3>
+          <p class="text-slate-400 text-sm mb-4">בחר אם אתה רוצה מסכת שלימה או מספר דפים</p>
+          <div class="space-y-3">
+            <button onclick="openFullMasechetAssign()" class="w-full bg-purple-600 hover:bg-purple-500 text-white font-semibold py-3 px-4 rounded-xl transition-all text-sm">
+              🏆 מסכת שלימה
+            </button>
+            <button onclick="openAutoAssignPages()" class="w-full bg-purple-600 hover:bg-purple-500 text-white font-semibold py-3 px-4 rounded-xl transition-all text-sm">
+              📄 מספר דפים
+            </button>
+          </div>
+        </div>
+      `);
+    }
+
+    function openFullMasechetAssign() {
+      showModal(`
+        <div class="p-6">
+          <h3 class="text-lg font-bold text-amber-400 mb-4">מסכת שלימה</h3>
+          <form id="full-masechet-form" class="space-y-4" onsubmit="event.preventDefault(); processFullMasechet()">
+            <div>
+              <label for="full-name" class="block text-sm font-medium text-slate-300 mb-1">שם *</label>
+              <input type="text" id="full-name" required
+                class="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-white focus:border-amber-500 focus:outline-none">
+            </div>
+            <div>
+              <label for="full-masechet" class="block text-sm font-medium text-slate-300 mb-1">בחר מסכת</label>
+              <select id="full-masechet"
+                class="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-white focus:border-amber-500 focus:outline-none">
+                ${MASECHOT_DATA.map(m => `<option value="${m.name}">${m.name} (${m.dafim} דפים)</option>`).join('')}
+              </select>
+            </div>
+            <div>
+              <label for="full-dedication" class="block text-sm font-medium text-slate-300 mb-1">הקדשה / הערה</label>
+              <textarea id="full-dedication" rows="2"
+                class="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-white focus:border-amber-500 focus:outline-none resize-none"
+                placeholder="לעילוי נשמת / לרפואה שלמה..."></textarea>
+            </div>
+            <button type="submit" class="w-full bg-purple-600 hover:bg-purple-500 text-white font-semibold py-3 px-4 rounded-xl transition-all">
+              קח מסכת שלימה
+            </button>
+          </form>
+        </div>
+      `);
+    }
+
+    async function processFullMasechet() {
+      const name = document.getElementById('full-name').value.trim();
+      const masechet = document.getElementById('full-masechet').value;
+      const dedication = document.getElementById('full-dedication').value.trim();
+      
+      if (!name) {
+        showToast('אנא הזן שם', 'error');
+        return;
+      }
+      
+      const mas = MASECHOT_DATA.find(m => m.name === masechet);
+      if (!mas) return;
+      
+      // Check if masechet already assigned
+      const existingFull = assignments.find(a => a.masechet === masechet && a.is_full_masechet);
+      if (existingFull) {
+        showToast('מסכת זו כבר הוקצתה', 'error');
+        return;
+      }
+      
+      showModal(`
+        <div class="p-6 text-center">
+          <div class="animate-spin w-12 h-12 border-4 border-amber-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+          <p class="text-slate-300">משבץ ${mas.name} בעל ${mas.dafim} דפים...</p>
+        </div>
+      `);
+      
+      // Check limit
+      if (assignments.length + mas.dafim > 999) {
+        showToast('אין מקום מספיק עבור מסכת זו!', 'error');
+        closeModal({ target: {}, currentTarget: {} });
+        return;
+      }
+      
+      // Create individual records for each daf
+      for (let daf = 2; daf <= mas.dafim + 1; daf++) {
+        const result = await window.dataSdk.create({
+          masechet: masechet,
+          daf: daf,
+          name: name,
+          dedication: dedication,
+          learned: false,
+          is_full_masechet: true
+        });
+        
+        if (!result.isOk) {
+          showToast('שגיאה בשיבוץ', 'error');
+          break;
+        }
+      }
+      
+      closeModal({ target: {}, currentTarget: {} });
+      showToast(`${masechet} שובצה בהצלחה!`);
+    }
+
+    function openAutoAssignPages() {
+      showModal(`
+        <div class="p-6">
+          <h3 class="text-lg font-bold text-amber-400 mb-4">שבץ אותי בעצמך</h3>
+          <p class="text-slate-400 text-sm mb-4">המערכת תבחר עבורך דפים פנויים באופן אוטומטי</p>
+          <form id="auto-form" class="space-y-4" onsubmit="event.preventDefault(); processAutoAssign()">
+            <div>
+              <label for="auto-name" class="block text-sm font-medium text-slate-300 mb-1">שם *</label>
+              <input type="text" id="auto-name" required
+                class="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-white focus:border-amber-500 focus:outline-none">
+            </div>
+            <div>
+              <label for="auto-count" class="block text-sm font-medium text-slate-300 mb-1">כמה דפים?</label>
+              <input type="number" id="auto-count" min="1" max="100" value="1"
+                class="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-white focus:border-amber-500 focus:outline-none">
+            </div>
+            <div>
+              <label for="auto-dedication" class="block text-sm font-medium text-slate-300 mb-1">הקדשה / הערה</label>
+              <textarea id="auto-dedication" rows="2"
+                class="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-white focus:border-amber-500 focus:outline-none resize-none"
+                placeholder="לעילוי נשמת / לרפואה שלמה..."></textarea>
+            </div>
+            <button type="submit" class="w-full bg-purple-600 hover:bg-purple-500 text-white font-semibold py-3 px-4 rounded-xl transition-all">
+              מצא לי דפים
+            </button>
+          </form>
+        </div>
+      `);
+    }
+
+    async function processAutoAssign() {
+      const name = document.getElementById('auto-name').value.trim();
+      const count = parseInt(document.getElementById('auto-count').value) || 1;
+      const dedication = document.getElementById('auto-dedication').value.trim();
+      
+      if (!name) return;
+      
+      // Find free dafim with priority to fill gaps
+      const freeDafim = [];
+      
+      // First priority: masechot that are partially done
+      const partialMasechot = MASECHOT_DATA.filter(mas => {
+        const masAssignments = assignments.filter(a => a.masechet === mas.name);
+        return masAssignments.length > 0 && masAssignments.length < mas.dafim;
+      });
+      
+      for (const mas of partialMasechot) {
+        for (let daf = 2; daf <= mas.dafim + 1; daf++) {
+          if (!getAssignment(mas.name, daf)) {
+            freeDafim.push({ masechet: mas.name, daf });
+          }
+        }
+      }
+      
+      // Then add from masechot not started yet
+      for (const mas of MASECHOT_DATA) {
+        if (!partialMasechot.includes(mas)) {
+          for (let daf = 2; daf <= mas.dafim + 1; daf++) {
+            if (!getAssignment(mas.name, daf)) {
+              freeDafim.push({ masechet: mas.name, daf });
+            }
+          }
+        }
+      }
+      
+      const toAssign = freeDafim.slice(0, count);
+      
+      if (toAssign.length === 0) {
+        showToast('אין דפים פנויים!', 'error');
+        return;
+      }
+      
+      // Show confirmation
+      const summary = {};
+      toAssign.forEach(d => {
+        summary[d.masechet] = (summary[d.masechet] || 0) + 1;
+      });
+      
+      const summaryText = Object.entries(summary).map(([m, c]) => `${m}: ${c}`).join(', ');
+      
+      showModal(`
+        <div class="p-6">
+          <h3 class="text-lg font-bold text-amber-400 mb-4">אישור שיבוץ</h3>
+          <p class="text-white mb-2">שם: ${name}</p>
+          <p class="text-slate-400 text-sm mb-4">${toAssign.length} דפים: ${summaryText}</p>
+          <div class="flex gap-3">
+            <button onclick="closeModal(event)" class="flex-1 bg-slate-600 hover:bg-slate-500 text-white font-semibold py-3 px-4 rounded-xl transition-all">
+              ביטול
+            </button>
+            <button id="confirm-auto-btn" onclick="executeAutoAssign()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-3 px-4 rounded-xl transition-all">
+              אשר
+            </button>
+          </div>
+        </div>
+      `);
+      
+      // Store data for confirmation
+      window.pendingAutoAssign = { name, dedication, dafim: toAssign };
+    }
+
+    async function executeAutoAssign() {
+      const { name, dedication, dafim } = window.pendingAutoAssign;
+      const btn = document.getElementById('confirm-auto-btn');
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'משבץ...';
+      }
+      
+      for (const d of dafim) {
+        if (assignments.length >= 999) {
+          showToast('הגעת למגבלת 999 שיבוצים!', 'error');
+          break;
+        }
+        
+        const result = await window.dataSdk.create({
+          masechet: d.masechet,
+          daf: d.daf,
+          name: name,
+          dedication: dedication,
+          learned: false,
+          is_full_masechet: false
+        });
+        
+        if (!result.isOk) {
+          showToast('שגיאה בשיבוץ', 'error');
+          break;
+        }
+      }
+      
+      closeModal({ target: { }, currentTarget: { } });
+      showToast(`שובצו ${dafim.length} דפים בהצלחה!`);
+    }
+
+    // ========== RANGE ASSIGN ==========
+    function openRangeAssign() {
+      showModal(`
+        <div class="p-6">
+          <h3 class="text-lg font-bold text-amber-400 mb-4">שיבוץ טווח דפים</h3>
+          <form id="range-form" class="space-y-4" onsubmit="event.preventDefault(); processRangeStep1()">
+            <div>
+              <label for="range-name" class="block text-sm font-medium text-slate-300 mb-1">שם *</label>
+              <input type="text" id="range-name" required
+                class="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-white focus:border-amber-500 focus:outline-none">
+            </div>
+            <div>
+              <label for="range-masechet" class="block text-sm font-medium text-slate-300 mb-1">מסכת</label>
+              <select id="range-masechet" onchange="updateRangeDafimOptions()"
+                class="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-white focus:border-amber-500 focus:outline-none">
+                ${MASECHOT_DATA.map(m => `<option value="${m.name}">${m.name}</option>`).join('')}
+              </select>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label for="range-from" class="block text-sm font-medium text-slate-300 mb-1">מדף</label>
+                <select id="range-from"
+                  class="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-white focus:border-amber-500 focus:outline-none">
+                </select>
+              </div>
+              <div>
+                <label for="range-to" class="block text-sm font-medium text-slate-300 mb-1">עד דף</label>
+                <select id="range-to"
+                  class="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-white focus:border-amber-500 focus:outline-none">
+                </select>
+              </div>
+            </div>
+            <div>
+              <label for="range-dedication" class="block text-sm font-medium text-slate-300 mb-1">הקדשה / הערה</label>
+              <textarea id="range-dedication" rows="2"
+                class="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-white focus:border-amber-500 focus:outline-none resize-none"></textarea>
+            </div>
+            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 px-4 rounded-xl transition-all">
+              המשך
+            </button>
+          </form>
+        </div>
+      `);
+      
+      setTimeout(updateRangeDafimOptions, 0);
+    }
+
+    function updateRangeDafimOptions() {
+      const masechet = document.getElementById('range-masechet')?.value;
+      if (!masechet) return;
+      
+      const mas = MASECHOT_DATA.find(m => m.name === masechet);
+      const fromSelect = document.getElementById('range-from');
+      const toSelect = document.getElementById('range-to');
+      
+      // Get free dafim
+      const freeDafim = [];
+      for (let daf = 2; daf <= mas.dafim + 1; daf++) {
+        if (!getAssignment(masechet, daf)) {
+          freeDafim.push(daf);
+        }
+      }
+      
+      fromSelect.innerHTML = freeDafim.map(d => `<option value="${d}">${formatDafNumber(d)}</option>`).join('');
+      toSelect.innerHTML = freeDafim.map(d => `<option value="${d}">${formatDafNumber(d)}</option>`).join('');
+      
+      if (freeDafim.length > 0) {
+        toSelect.value = freeDafim[freeDafim.length - 1];
+      }
+    }
+
+    async function processRangeStep1() {
+      const name = document.getElementById('range-name').value.trim();
+      const masechet = document.getElementById('range-masechet').value;
+      const fromDaf = parseInt(document.getElementById('range-from').value);
+      const toDaf = parseInt(document.getElementById('range-to').value);
+      const dedication = document.getElementById('range-dedication').value.trim();
+      
+      if (!name || fromDaf > toDaf) {
+        showToast('אנא בדוק את הנתונים', 'error');
+        return;
+      }
+      
+      // Check for occupied dafim in range
+      const dafimToAssign = [];
+      let hasOccupied = false;
+      
+      for (let daf = fromDaf; daf <= toDaf; daf++) {
+        if (getAssignment(masechet, daf)) {
+          hasOccupied = true;
+        } else {
+          dafimToAssign.push(daf);
+        }
+      }
+      
+      if (hasOccupied) {
+        showToast('הטווח מכיל דפים תפוסים, רק הפנויים ישובצו', 'info');
+      }
+      
+      if (dafimToAssign.length === 0) {
+        showToast('אין דפים פנויים בטווח זה', 'error');
+        return;
+      }
+      
+      // Execute assignment
+      showModal(`
+        <div class="p-6 text-center">
+          <div class="animate-spin w-12 h-12 border-4 border-amber-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+          <p class="text-slate-300">משבץ ${dafimToAssign.length} דפים...</p>
+        </div>
+      `);
+      
+      for (const daf of dafimToAssign) {
+        if (assignments.length >= 999) {
+          showToast('הגעת למגבלת 999 שיבוצים!', 'error');
+          break;
+        }
+        
+        const result = await window.dataSdk.create({
+          masechet: masechet,
+          daf: daf,
+          name: name,
+          dedication: dedication,
+          learned: false,
+          is_full_masechet: false
+        });
+        
+        if (!result.isOk) {
+          showToast('שגיאה בשיבוץ', 'error');
+          break;
+        }
+      }
+      
+      closeModal({ target: {}, currentTarget: {} });
+      showToast(`שובצו ${dafimToAssign.length} דפים בהצלחה!`);
+    }
+
+    // ========== CRUD OPERATIONS ==========
+    async function submitAssignment(masechet, daf, isEdit) {
+      const name = document.getElementById('assign-name').value.trim();
+      const dedication = document.getElementById('assign-dedication').value.trim();
+      
+      if (!name) return;
+      
+      if (isEdit) {
+        const assignment = getAssignment(masechet, daf);
+        if (assignment) {
+          assignment.name = name;
+          assignment.dedication = dedication;
+          const result = await window.dataSdk.update(assignment);
+          if (result.isOk) {
+            showToast('הפרטים עודכנו');
+          } else {
+            showToast('שגיאה בעדכון', 'error');
+          }
+        }
+      } else {
+        if (assignments.length >= 999) {
+          showToast('הגעת למגבלת 999 שיבוצים!', 'error');
+          return;
+        }
+        
+        const result = await window.dataSdk.create({
+          masechet: masechet,
+          daf: daf,
+          name: name,
+          dedication: dedication,
+          learned: false,
+          is_full_masechet: false
+        });
+        
+        if (result.isOk) {
+          showToast('הדף שובץ בהצלחה!');
+        } else {
+          showToast('שגיאה בשיבוץ', 'error');
+        }
+      }
+      
+      closeModal({ target: {}, currentTarget: {} });
+    }
+
+    async function toggleLearnedModal(masechet, daf) {
+      const assignment = getAssignment(masechet, daf);
+      if (assignment) {
+        assignment.learned = !assignment.learned;
+        const result = await window.dataSdk.update(assignment);
+        if (result.isOk) {
+          showToast(assignment.learned ? 'סומן כנלמד!' : 'בוטל סימון נלמד');
+          renderMasechetScreen();
+        } else {
+          showToast('שגיאה בעדכון', 'error');
+        }
+      }
+      closeModal({ target: {}, currentTarget: {} });
+    }
+
+    async function toggleLearned(recordB64) {
+      const record = JSON.parse(atob(recordB64));
+      record.learned = !record.learned;
+      const result = await window.dataSdk.update(record);
+      if (result.isOk) {
+        updateMyPagesView();
+      } else {
+        showToast('שגיאה בעדכון', 'error');
+      }
+    }
+
+    async function deleteAssignment(masechet, daf) {
+      const assignment = getAssignment(masechet, daf);
+      if (assignment) {
+        const result = await window.dataSdk.delete(assignment);
+        if (result.isOk) {
+          showToast('השיבוץ נמחק');
+        } else {
+          showToast('שגיאה במחיקה', 'error');
+        }
+      }
+      closeModal({ target: {}, currentTarget: {} });
+    }
+
+    // ========== CONFIG RENDER ==========
+    function renderConfig() {
+      document.getElementById('main-title').textContent = config.site_title || defaultConfig.site_title;
+      document.getElementById('main-subtitle').textContent = config.site_subtitle || defaultConfig.site_subtitle;
+    }
+
+    // ========== SDK INITIALIZATION ==========
+    const dataHandler = {
+      onDataChanged(data) {
+        assignments = data;
+        renderStats();
+        renderPixelMap();
+        renderMasechotList();
+        if (currentMasechet) {
+          renderMasechetScreen();
+        }
+      }
+    };
+
+    window.elementSdk.init({
+      defaultConfig,
+      onConfigChange: async (newConfig) => {
+        config = { ...defaultConfig, ...newConfig };
+        renderConfig();
+      },
+      mapToCapabilities: (cfg) => ({
+        recolorables: [],
+        borderables: [],
+        fontEditable: undefined,
+        fontSizeable: undefined
+      }),
+      mapToEditPanelValues: (cfg) => new Map([
+        ["site_title", cfg.site_title || defaultConfig.site_title],
+        ["site_subtitle", cfg.site_subtitle || defaultConfig.site_subtitle]
+      ])
+    });
+
+    window.dataSdk.init(dataHandler).then(result => {
+      if (!result.isOk) {
+        console.error("Failed to initialize data SDK");
+      }
+      renderConfig();
+      renderStats();
+      renderPixelMap();
+      renderMasechotList();
+    });
+  </script>
+</body>
+</html>
