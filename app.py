@@ -3,7 +3,7 @@ import os
 import sqlite3
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -182,11 +182,15 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
-        if parsed.path in ("/", "/base.html", "/index.html"):
+        path = unquote(parsed.path)
+        if path in ("/", "/base.html", "/index.html"):
             self._serve_html()
             return
-        if parsed.path == "/api/assignments":
+        if path == "/api/assignments":
             self._send_json(store.list_assignments())
+            return
+        if path == "/יחד אחים.png":
+            self._serve_file(BASE_DIR / "יחד אחים.png", "image/png")
             return
         self.send_error(404, "Not Found")
 
@@ -262,6 +266,17 @@ class RequestHandler(BaseHTTPRequestHandler):
         content = HTML_PATH.read_bytes()
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(content)))
+        self.end_headers()
+        self.wfile.write(content)
+
+    def _serve_file(self, path: Path, content_type: str) -> None:
+        if not path.exists() or not path.is_file():
+            self.send_error(404, "Not Found")
+            return
+        content = path.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(content)))
         self.end_headers()
         self.wfile.write(content)

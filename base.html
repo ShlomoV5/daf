@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>שיבוץ דף יומי</title>
+  <title>מסיימים ש״ס יחד אחים</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
@@ -29,13 +29,44 @@
 
   <div id="app" class="w-full h-full">
     <!-- Toast Container -->
-    <div id="toast-container" class="fixed top-4 left-4 right-4 z-50 flex flex-col gap-2"></div>
+    <div id="toast-container" class="fixed top-4 left-4 right-4 z-[60] flex flex-col gap-2"></div>
 
     <!-- Header -->
     <header class="bg-gradient-to-r from-amber-600 to-amber-700 shadow-lg sticky top-0 z-40">
+      <div id="countdown-banner" class="border-b border-amber-500/40 bg-amber-700/40">
+        <div class="max-w-4xl mx-auto px-4 py-2 flex items-center justify-between gap-3 text-xs sm:text-sm">
+          <div class="flex flex-wrap items-center gap-2 text-amber-100">
+            <span class="font-semibold">ימים לסיום:</span>
+            <div class="flex flex-wrap items-center gap-2">
+              <div class="flex items-center gap-1 bg-slate-900/30 px-2 py-1 rounded-lg">
+                <span id="countdown-days" class="font-bold text-white">0</span>
+                <span>ימים</span>
+              </div>
+              <div class="flex items-center gap-1 bg-slate-900/30 px-2 py-1 rounded-lg">
+                <span id="countdown-hours" class="font-bold text-white">00</span>
+                <span>שעות</span>
+              </div>
+              <div class="flex items-center gap-1 bg-slate-900/30 px-2 py-1 rounded-lg">
+                <span id="countdown-minutes" class="font-bold text-white">00</span>
+                <span>דקות</span>
+              </div>
+              <div class="flex items-center gap-1 bg-slate-900/30 px-2 py-1 rounded-lg">
+                <span id="countdown-seconds" class="font-bold text-white">00</span>
+                <span>שניות</span>
+              </div>
+            </div>
+          </div>
+          <button type="button" onclick="closeCountdownBanner()" class="text-amber-100 hover:text-white transition-colors" aria-label="סגור">✕</button>
+        </div>
+      </div>
       <div class="max-w-4xl mx-auto px-4 py-4">
-        <h1 id="main-title" class="text-2xl font-bold text-center">שיבוץ דף יומי</h1>
-        <p id="main-subtitle" class="text-amber-100 text-center text-sm mt-1">השלמת הש״ס</p>
+        <div class="flex flex-col items-center gap-2">
+          <div class="flex items-center justify-center gap-3">
+            <img src="/יחד אחים.png" alt="יחד אחים" class="h-10 w-10 object-contain drop-shadow-md">
+            <h1 id="main-title" class="text-2xl font-bold text-center">מסיימים ש״ס יחד אחים</h1>
+          </div>
+          <p id="main-subtitle" class="text-amber-100 text-center text-sm">השלמת הש״ס</p>
+        </div>
       </div>
     </header>
 
@@ -197,7 +228,7 @@
     let currentMasechet = null;
 
     const defaultConfig = {
-      site_title: "שיבוץ דף יומי",
+      site_title: "מסיימים ש״ס יחד אחים",
       site_subtitle: "השלמת הש״ס"
     };
 
@@ -235,6 +266,38 @@
       toast.textContent = message;
       container.appendChild(toast);
       setTimeout(() => toast.remove(), 3000);
+    }
+
+    const COUNTDOWN_TARGET = new Date(2026, 10, 29, 0, 0, 0);
+
+    function padCountdown(value) {
+      return value.toString().padStart(2, '0');
+    }
+
+    function updateCountdown() {
+      const now = new Date();
+      let diff = COUNTDOWN_TARGET - now;
+      if (diff < 0) diff = 0;
+      const totalSeconds = Math.floor(diff / 1000);
+      const days = Math.floor(totalSeconds / 86400);
+      const hours = Math.floor((totalSeconds % 86400) / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      const seconds = totalSeconds % 60;
+      const daysEl = document.getElementById('countdown-days');
+      const hoursEl = document.getElementById('countdown-hours');
+      const minutesEl = document.getElementById('countdown-minutes');
+      const secondsEl = document.getElementById('countdown-seconds');
+      if (daysEl) daysEl.textContent = days.toLocaleString();
+      if (hoursEl) hoursEl.textContent = padCountdown(hours);
+      if (minutesEl) minutesEl.textContent = padCountdown(minutes);
+      if (secondsEl) secondsEl.textContent = padCountdown(seconds);
+    }
+
+    function closeCountdownBanner() {
+      const banner = document.getElementById('countdown-banner');
+      if (banner) {
+        banner.classList.add('hidden');
+      }
     }
 
     // ========== RENDER FUNCTIONS ==========
@@ -655,7 +718,7 @@
       showModal(`
         <div class="p-6 text-center">
           <div class="animate-spin w-12 h-12 border-4 border-amber-500 border-t-transparent rounded-full mx-auto mb-4"></div>
-          <p class="text-slate-300">משבץ ${mas.name} בעל ${mas.dafim} דפים...</p>
+          <p class="text-slate-300">משבץ ${mas.dafim} דפים של מסכת ${mas.name}...</p>
         </div>
       `);
       
@@ -675,14 +738,14 @@
           dedication: dedication,
           learned: false,
           is_full_masechet: true
-        });
+        }, { skipRefresh: true });
         
         if (!result.isOk) {
           showToast('שגיאה בשיבוץ', 'error');
           break;
         }
       }
-      
+      await refreshAssignments();
       closeModal({ target: {}, currentTarget: {} });
       showToast(`${masechet} שובצה בהצלחה!`);
     }
@@ -795,8 +858,9 @@
         btn.textContent = 'משבץ...';
       }
       
+      let createdCount = 0;
       for (const d of dafim) {
-        if (assignments.length >= 999) {
+        if (assignments.length + createdCount >= 999) {
           showToast('הגעת למגבלת 999 שיבוצים!', 'error');
           break;
         }
@@ -808,14 +872,17 @@
           dedication: dedication,
           learned: false,
           is_full_masechet: false
-        });
+        }, { skipRefresh: true });
         
         if (!result.isOk) {
           showToast('שגיאה בשיבוץ', 'error');
           break;
         }
+        createdCount += 1;
       }
-      
+      if (createdCount > 0) {
+        await refreshAssignments();
+      }
       closeModal({ target: { }, currentTarget: { } });
       showToast(`שובצו ${dafim.length} דפים בהצלחה!`);
     }
@@ -932,8 +999,9 @@
         </div>
       `);
       
+      let createdCount = 0;
       for (const daf of dafimToAssign) {
-        if (assignments.length >= 999) {
+        if (assignments.length + createdCount >= 999) {
           showToast('הגעת למגבלת 999 שיבוצים!', 'error');
           break;
         }
@@ -945,14 +1013,17 @@
           dedication: dedication,
           learned: false,
           is_full_masechet: false
-        });
+        }, { skipRefresh: true });
         
         if (!result.isOk) {
           showToast('שגיאה בשיבוץ', 'error');
           break;
         }
+        createdCount += 1;
       }
-      
+      if (createdCount > 0) {
+        await refreshAssignments();
+      }
       closeModal({ target: {}, currentTarget: {} });
       showToast(`שובצו ${dafimToAssign.length} דפים בהצלחה!`);
     }
@@ -1097,7 +1168,7 @@
         const result = await refreshAssignments(handler);
         return { isOk: result };
       },
-      async create(record) {
+      async create(record, options = {}) {
         try {
           const response = await fetch('/api/assignments', {
             method: 'POST',
@@ -1108,7 +1179,9 @@
             logHttpError('Create assignment', response);
             return { isOk: false };
           }
-          await refreshAssignments();
+          if (!options.skipRefresh) {
+            await refreshAssignments();
+          }
           return { isOk: true };
         } catch (error) {
           console.error(error);
@@ -1158,6 +1231,8 @@
     };
 
     renderConfig();
+    updateCountdown();
+    setInterval(updateCountdown, 1000);
     window.dataSdk.init(dataHandler).then(result => {
       if (!result.isOk) {
         console.error("Failed to initialize data");
