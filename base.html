@@ -223,7 +223,6 @@
     ];
 
     const TOTAL_DAFIM = 2711;
-    const MAX_ASSIGNMENT_LIMIT = 999;
 
     let assignmentRanges = [];
     let assignments = [];
@@ -1047,13 +1046,6 @@
         </div>
       `);
       
-      // Check limit
-      if (assignments.length + mas.dafim > MAX_ASSIGNMENT_LIMIT) {
-        showToast('אין מקום מספיק עבור מסכת זו!', 'error');
-        closeModal({ target: {}, currentTarget: {} });
-        return;
-      }
-      
       const record = {
         masechet: masechet,
         daf: 2,
@@ -1181,17 +1173,8 @@
         btn.textContent = 'משבץ...';
       }
       
-      const availableSlots = Math.max(MAX_ASSIGNMENT_LIMIT - assignments.length, 0);
-      const allowedDafim = dafim.slice(0, Math.min(dafim.length, availableSlots));
-      if (allowedDafim.length < dafim.length) {
-        showToast(`הגעת למגבלת ${MAX_ASSIGNMENT_LIMIT} שיבוצים!`, 'error');
-      }
-      if (allowedDafim.length === 0) {
-        closeModal({ target: { }, currentTarget: { } });
-        return;
-      }
       const grouped = {};
-      allowedDafim.forEach(d => {
+      dafim.forEach(d => {
         if (!grouped[d.masechet]) {
           grouped[d.masechet] = [];
         }
@@ -1334,16 +1317,7 @@
         </div>
       `);
       
-      const availableSlots = Math.max(MAX_ASSIGNMENT_LIMIT - assignments.length, 0);
-      const allowedDafim = dafimToAssign.slice(0, Math.min(dafimToAssign.length, availableSlots));
-      if (allowedDafim.length < dafimToAssign.length) {
-        showToast(`הגעת למגבלת ${MAX_ASSIGNMENT_LIMIT} שיבוצים!`, 'error');
-      }
-      if (allowedDafim.length === 0) {
-        closeModal({ target: {}, currentTarget: {} });
-        return;
-      }
-      const ranges = buildDafRanges(allowedDafim);
+      const ranges = buildDafRanges(dafimToAssign);
       const records = ranges.map(range => ({
         masechet: masechet,
         daf: range.start,
@@ -1393,11 +1367,6 @@
         closeModal({ target: {}, currentTarget: {} });
         return;
       }
-      if (assignments.length >= MAX_ASSIGNMENT_LIMIT) {
-        showToast(`הגעת למגבלת ${MAX_ASSIGNMENT_LIMIT} שיבוצים!`, 'error');
-        return;
-      }
-      
       const result = await window.dataSdk.create({
         masechet: masechet,
         daf: daf,
