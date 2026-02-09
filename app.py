@@ -9,96 +9,106 @@ from urllib.parse import urlparse
 BASE_DIR = Path(__file__).resolve().parent
 HTML_PATH = BASE_DIR / "base.html"
 DB_PATH = os.environ.get("DB_PATH", str(BASE_DIR / "assignments.db"))
+MAX_CONTENT_LENGTH = 1_000_000
+PAYLOAD_TOO_LARGE = object()
 
 
 class AssignmentStore:
     def __init__(self, db_path: str) -> None:
-        self.connection = sqlite3.connect(db_path)
-        self.connection.row_factory = sqlite3.Row
+        self.db_path = db_path
         self._ensure_schema()
 
     def _ensure_schema(self) -> None:
-        self.connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS assignments (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                masechet TEXT NOT NULL,
-                daf INTEGER NOT NULL,
-                name TEXT NOT NULL,
-                dedication TEXT,
-                learned INTEGER NOT NULL DEFAULT 0,
-                is_full_masechet INTEGER NOT NULL DEFAULT 0,
-                UNIQUE (masechet, daf)
+        with self._get_connection() as connection:
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS assignments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    masechet TEXT NOT NULL,
+                    daf INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    dedication TEXT,
+                    learned INTEGER NOT NULL DEFAULT 0,
+                    is_full_masechet INTEGER NOT NULL DEFAULT 0,
+                    UNIQUE (masechet, daf)
+                )
+                """
             )
-            """
-        )
-        self.connection.commit()
 
     def list_assignments(self) -> list[dict]:
-        cursor = self.connection.execute(
-            "SELECT id, masechet, daf, name, dedication, learned, is_full_masechet FROM assignments "
-            "ORDER BY masechet, daf"
-        )
-        return [self._row_to_dict(row) for row in cursor.fetchall()]
+        with self._get_connection() as connection:
+            cursor = connection.execute(
+                "SELECT id, masechet, daf, name, dedication, learned, is_full_masechet FROM assignments "
+                "ORDER BY masechet, daf"
+            )
+            rows = cursor.fetchall()
+        return [self._row_to_dict(row) for row in rows]
 
     def get_assignment(self, assignment_id: int) -> dict | None:
-        cursor = self.connection.execute(
-            "SELECT id, masechet, daf, name, dedication, learned, is_full_masechet FROM assignments WHERE id = ?",
-            (assignment_id,),
-        )
-        row = cursor.fetchone()
+        with self._get_connection() as connection:
+            cursor = connection.execute(
+                "SELECT id, masechet, daf, name, dedication, learned, is_full_masechet FROM assignments WHERE id = ?",
+                (assignment_id,),
+            )
+            row = cursor.fetchone()
         return self._row_to_dict(row) if row else None
 
     def create_assignment(self, payload: dict) -> dict:
         record = self._parse_payload(payload, require_fields=True)
-        cursor = self.connection.execute(
-            """
-            INSERT INTO assignments (masechet, daf, name, dedication, learned, is_full_masechet)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                record["masechet"],
-                record["daf"],
-                record["name"],
-                record.get("dedication"),
-                int(record.get("learned", False)),
-                int(record.get("is_full_masechet", False)),
-            ),
-        )
-        self.connection.commit()
-        return self.get_assignment(cursor.lastrowid)
+        with self._get_connection() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO assignments (masechet, daf, name, dedication, learned, is_full_masechet)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record["masechet"],
+                    record["daf"],
+                    record["name"],
+                    record.get("dedication"),
+                    int(record.get("learned", False)),
+                    int(record.get("is_full_masechet", False)),
+                ),
+            )
+            assignment_id = cursor.lastrowid
+        return self.get_assignment(assignment_id)
 
     def update_assignment(self, assignment_id: int, payload: dict) -> dict | None:
         existing = self.get_assignment(assignment_id)
         if not existing:
             return None
         record = self._parse_payload(payload, require_fields=False, defaults=existing)
-        self.connection.execute(
-            """
-            UPDATE assignments
-            SET masechet = ?, daf = ?, name = ?, dedication = ?, learned = ?, is_full_masechet = ?
-            WHERE id = ?
-            """,
-            (
-                record["masechet"],
-                record["daf"],
-                record["name"],
-                record.get("dedication"),
-                int(record.get("learned", False)),
-                int(record.get("is_full_masechet", False)),
-                assignment_id,
-            ),
-        )
-        self.connection.commit()
+        with self._get_connection() as connection:
+            connection.execute(
+                """
+                UPDATE assignments
+                SET masechet = ?, daf = ?, name = ?, dedication = ?, learned = ?, is_full_masechet = ?
+                WHERE id = ?
+                """,
+                (
+                    record["masechet"],
+                    record["daf"],
+                    record["name"],
+                    record.get("dedication"),
+                    int(record.get("learned", False)),
+                    int(record.get("is_full_masechet", False)),
+                    assignment_id,
+                ),
+            )
         return self.get_assignment(assignment_id)
 
     def delete_assignment(self, assignment_id: int) -> bool:
-        cursor = self.connection.execute(
-            "DELETE FROM assignments WHERE id = ?",
-            (assignment_id,),
-        )
-        self.connection.commit()
+        with self._get_connection() as connection:
+            cursor = connection.execute(
+                "DELETE FROM assignments WHERE id = ?",
+                (assignment_id,),
+            )
         return cursor.rowcount > 0
+
+    def _get_connection(self) -> sqlite3.Connection:
+        connection = sqlite3.connect(self.db_path)
+        connection.row_factory = sqlite3.Row
+        return connection
 
     @staticmethod
     def _row_to_dict(row: sqlite3.Row | None) -> dict | None:
@@ -168,6 +178,8 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.send_error(404, "Not Found")
             return
         payload = self._read_json()
+        if payload is PAYLOAD_TOO_LARGE:
+            return
         if payload is None:
             self._send_json({"error": "Invalid JSON"}, status=400)
             return
@@ -190,6 +202,8 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._send_json({"error": "Invalid assignment id"}, status=400)
             return
         payload = self._read_json()
+        if payload is PAYLOAD_TOO_LARGE:
+            return
         if payload is None:
             self._send_json({"error": "Invalid JSON"}, status=400)
             return
@@ -231,8 +245,14 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(content)
 
-    def _read_json(self) -> dict | None:
-        length = int(self.headers.get("Content-Length", "0"))
+    def _read_json(self) -> dict | object | None:
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            return None
+        if length > MAX_CONTENT_LENGTH:
+            self._send_json({"error": "Payload too large"}, status=413)
+            return PAYLOAD_TOO_LARGE
         if length <= 0:
             return None
         try:

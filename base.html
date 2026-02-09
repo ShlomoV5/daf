@@ -437,7 +437,7 @@
                 <span class="text-slate-400 text-xs"> דף ${formatDafNumber(item.daf)}</span>
                 ${item.dedication ? `<div class="text-slate-400 text-xs mt-1">${item.dedication}</div>` : ''}
               </div>
-              <button onclick="toggleLearned('${btoa(JSON.stringify(item))}')" class="px-2 py-1 ${item.learned ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-blue-600 hover:bg-blue-500'} text-white rounded text-xs transition-all">
+              <button onclick="toggleLearned(${item.id})" class="px-2 py-1 ${item.learned ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-blue-600 hover:bg-blue-500'} text-white rounded text-xs transition-all">
                 ${item.learned ? '✓' : '◯'}
               </button>
             `;
@@ -1016,8 +1016,9 @@
       closeModal({ target: {}, currentTarget: {} });
     }
 
-    async function toggleLearned(recordB64) {
-      const record = JSON.parse(atob(recordB64));
+    async function toggleLearned(recordId) {
+      const record = assignments.find(a => a.id === recordId);
+      if (!record) return;
       record.learned = !record.learned;
       const result = await window.dataSdk.update(record);
       if (result.isOk) {
@@ -1084,14 +1085,8 @@
       }
     }
 
-    async function logResponseError(action, response) {
-      let details = '';
-      try {
-        details = await response.text();
-      } catch (error) {
-        details = 'Failed to read response body';
-      }
-      console.error(`${action} failed`, response.status, response.statusText, details);
+    function logResponseError(action, response) {
+      console.error(`${action} failed`, response.status, response.statusText);
     }
 
     window.dataSdk = {
@@ -1107,7 +1102,7 @@
             body: JSON.stringify(record)
           });
           if (!response.ok) {
-            await logResponseError('Create assignment', response);
+            logResponseError('Create assignment', response);
             return { isOk: false };
           }
           await refreshAssignments();
@@ -1128,7 +1123,7 @@
             body: JSON.stringify(record)
           });
           if (!response.ok) {
-            await logResponseError('Update assignment', response);
+            logResponseError('Update assignment', response);
             return { isOk: false };
           }
           await refreshAssignments();
@@ -1147,7 +1142,7 @@
             method: 'DELETE'
           });
           if (!response.ok) {
-            await logResponseError('Delete assignment', response);
+            logResponseError('Delete assignment', response);
             return { isOk: false };
           }
           await refreshAssignments();
