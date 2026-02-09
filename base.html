@@ -265,13 +265,13 @@
       return `${year}${month}${day}`;
     }
 
-    function buildDafRanges(dafs) {
-      if (!dafs.length) return [];
+    function buildDafRanges(dafNumbers) {
+      if (!dafNumbers.length) return [];
       const ranges = [];
-      let start = dafs[0];
-      let previous = dafs[0];
-      for (let i = 1; i < dafs.length; i += 1) {
-        const current = dafs[i];
+      let start = dafNumbers[0];
+      let previous = dafNumbers[0];
+      for (let i = 1; i < dafNumbers.length; i += 1) {
+        const current = dafNumbers[i];
         if (current === previous + 1) {
           previous = current;
           continue;
@@ -1036,8 +1036,8 @@
         btn.textContent = 'משבץ...';
       }
       
-      const availableSlots = 999 - assignments.length;
-      const allowedDafim = dafim.slice(0, Math.max(availableSlots, 0));
+      const availableSlots = Math.max(999 - assignments.length, 0);
+      const allowedDafim = dafim.slice(0, Math.min(dafim.length, availableSlots));
       if (allowedDafim.length < dafim.length) {
         showToast('הגעת למגבלת 999 שיבוצים!', 'error');
       }
@@ -1175,8 +1175,8 @@
         </div>
       `);
       
-      const availableSlots = 999 - assignments.length;
-      const allowedDafim = dafimToAssign.slice(0, Math.max(availableSlots, 0));
+      const availableSlots = Math.max(999 - assignments.length, 0);
+      const allowedDafim = dafimToAssign.slice(0, Math.min(dafimToAssign.length, availableSlots));
       if (allowedDafim.length < dafimToAssign.length) {
         showToast('הגעת למגבלת 999 שיבוצים!', 'error');
       }
