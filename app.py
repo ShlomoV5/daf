@@ -4,6 +4,8 @@ import io
 import json
 import os
 import shutil
+import ssl
+import stat
 import sqlite3
 import sys
 import tempfile
@@ -611,7 +613,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                   <div id="import-status" class="status"></div>
                 </div>
                 <script>
-                  const UPDATE_RELOAD_DELAY_MS = {UPDATE_RELOAD_DELAY_MS};
+                  const UPDATE_RELOAD_DELAY_MS = {json.dumps(UPDATE_RELOAD_DELAY_MS)};
                   async function updateCodebase() {{
                     const statusEl = document.getElementById('update-status');
                     statusEl.textContent = 'מעדכן קוד...';
@@ -725,7 +727,10 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     def _perform_code_update(self) -> int:
         update_url = self._get_update_url()
-        with urllib.request.urlopen(update_url, timeout=UPDATE_DOWNLOAD_TIMEOUT) as response:
+        context = ssl.create_default_context()
+        with urllib.request.urlopen(
+            update_url, timeout=UPDATE_DOWNLOAD_TIMEOUT, context=context
+        ) as response:
             status = getattr(response, "status", 200)
             if status not in (200, None):
                 raise ValueError(
@@ -769,6 +774,8 @@ class RequestHandler(BaseHTTPRequestHandler):
     def _safe_extract_archive(archive: zipfile.ZipFile, destination: Path) -> None:
         for member in archive.infolist():
             member_path = Path(member.filename)
+            if stat.S_ISLNK(member.external_attr >> 16):
+                raise ValueError("Invalid archive entry")
             if member_path.is_absolute() or ".." in member_path.parts:
                 raise ValueError("Invalid archive entry")
             target = destination / member_path
