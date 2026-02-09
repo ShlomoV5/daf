@@ -12,11 +12,8 @@ DB_PATH = os.environ.get("DB_PATH", str(BASE_DIR / "assignments.db"))
 MAX_CONTENT_LENGTH = 1_000_000
 
 
-class PayloadTooLarge:
+class PayloadTooLargeError(Exception):
     pass
-
-
-PAYLOAD_TOO_LARGE = PayloadTooLarge()
 
 
 class AssignmentStore:
@@ -162,10 +159,15 @@ class AssignmentStore:
         if require_fields and (not masechet or not name or daf is None):
             raise ValueError("Missing required fields")
 
+        try:
+            daf_value = int(daf)
+        except (TypeError, ValueError) as error:
+            raise ValueError("Invalid daf") from error
+
         return {
             "masechet": masechet,
             "name": name,
-            "daf": int(daf),
+            "daf": daf_value,
             "dedication": str(dedication).strip() if dedication is not None else "",
             "learned": bool(learned),
             "is_full_masechet": bool(is_full_masechet),
@@ -192,8 +194,10 @@ class RequestHandler(BaseHTTPRequestHandler):
         if self.path != "/api/assignments":
             self.send_error(404, "Not Found")
             return
-        payload = self._read_json()
-        if payload is PAYLOAD_TOO_LARGE:
+        try:
+            payload = self._read_json()
+        except PayloadTooLargeError:
+            self._send_json({"error": "Payload too large"}, status=413)
             return
         if payload is None:
             self._send_json({"error": "Invalid JSON"}, status=400)
@@ -216,8 +220,10 @@ class RequestHandler(BaseHTTPRequestHandler):
         if assignment_id is None:
             self._send_json({"error": "Invalid assignment id"}, status=400)
             return
-        payload = self._read_json()
-        if payload is PAYLOAD_TOO_LARGE:
+        try:
+            payload = self._read_json()
+        except PayloadTooLargeError:
+            self._send_json({"error": "Payload too large"}, status=413)
             return
         if payload is None:
             self._send_json({"error": "Invalid JSON"}, status=400)
@@ -260,14 +266,13 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(content)
 
-    def _read_json(self) -> dict | PayloadTooLarge | None:
+    def _read_json(self) -> dict | None:
         try:
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
             return None
         if length > MAX_CONTENT_LENGTH:
-            self._send_json({"error": "Payload too large"}, status=413)
-            return PAYLOAD_TOO_LARGE
+            raise PayloadTooLargeError
         if length <= 0:
             return None
         try:

@@ -1018,7 +1018,10 @@
 
     async function toggleLearned(recordId) {
       const record = assignments.find(a => a.id === recordId);
-      if (!record) return;
+      if (!record) {
+        showToast('שיבוץ לא נמצא', 'error');
+        return;
+      }
       const updatedRecord = { ...record, learned: !record.learned };
       const result = await window.dataSdk.update(updatedRecord);
       if (result.isOk) {
