@@ -774,7 +774,7 @@ class RequestHandler(BaseHTTPRequestHandler):
     def _safe_extract_archive(archive: zipfile.ZipFile, destination: Path) -> None:
         for member in archive.infolist():
             member_path = Path(member.filename)
-            if stat.S_ISLNK(member.external_attr >> 16):
+            if RequestHandler._is_symlink_member(member):
                 raise ValueError("Invalid archive entry")
             if member_path.is_absolute() or ".." in member_path.parts:
                 raise ValueError("Invalid archive entry")
@@ -785,6 +785,10 @@ class RequestHandler(BaseHTTPRequestHandler):
             target.parent.mkdir(parents=True, exist_ok=True)
             with archive.open(member) as source, open(target, "wb") as target_file:
                 shutil.copyfileobj(source, target_file)
+
+    @staticmethod
+    def _is_symlink_member(member: zipfile.ZipInfo) -> bool:
+        return stat.S_ISLNK(member.external_attr >> 16)
 
     @staticmethod
     def _resolve_repo_root(extract_dir: Path) -> Path:
@@ -805,7 +809,6 @@ class RequestHandler(BaseHTTPRequestHandler):
             db_relative_path = db_path.relative_to(BASE_DIR)
         except ValueError:
             db_relative_path = None
-        base_resolved = BASE_DIR.resolve()
         updated_count = 0
         for path in repo_root.rglob("*"):
             relative_path = path.relative_to(repo_root)
@@ -814,8 +817,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             if db_relative_path and relative_path == db_relative_path:
                 continue
             destination = BASE_DIR / relative_path
-            destination_resolved = destination.resolve(strict=False)
-            if destination_resolved != base_resolved and base_resolved not in destination_resolved.parents:
+            if not RequestHandler._is_path_within_base_dir(destination):
                 raise ValueError("Invalid destination path")
             if path.is_dir():
                 destination.mkdir(parents=True, exist_ok=True)
@@ -835,6 +837,12 @@ class RequestHandler(BaseHTTPRequestHandler):
                 print(f"Failed to restart server: {error}")
 
         threading.Thread(target=_restart, daemon=True).start()
+
+    @staticmethod
+    def _is_path_within_base_dir(destination: Path) -> bool:
+        base_resolved = BASE_DIR.resolve()
+        destination_resolved = destination.resolve(strict=False)
+        return destination_resolved == base_resolved or base_resolved in destination_resolved.parents
 
     def _send_html(self, content: str, *, status: int = 200) -> None:
         body = content.encode("utf-8")
