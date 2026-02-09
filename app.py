@@ -1,4 +1,5 @@
 import base64
+import html
 import io
 import json
 import os
@@ -572,6 +573,8 @@ class RequestHandler(BaseHTTPRequestHandler):
     def _serve_backup_page(self) -> None:
         if not self._require_backup_auth():
             return
+        safe_repo = html.escape(UPDATE_REPO)
+        safe_branch = html.escape(UPDATE_BRANCH)
         self._send_html(
             f"""
             <!DOCTYPE html>
@@ -596,7 +599,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 </div>
                 <div class="card">
                   <h2>עדכון מ-GitHub</h2>
-                  <p class="muted">משיכת הקוד מתוך {UPDATE_REPO} (ענף {UPDATE_BRANCH}). הנתונים נשמרים.</p>
+                  <p class="muted">משיכת הקוד מתוך {safe_repo} (ענף {safe_branch}). הנתונים נשמרים.</p>
                   <button type="button" onclick="updateCodebase()">עדכן קוד</button>
                   <div id="update-status" class="status"></div>
                 </div>
@@ -615,7 +618,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                     const response = await fetch('/dafdaf/update', {{ method: 'POST' }});
                     if (response.ok) {{
                       const data = await response.json();
-                      statusEl.textContent = data.message || 'עודכן בהצלחה (תגובה ללא הודעה).';
+                      statusEl.textContent = data.message;
                       setTimeout(() => window.location.reload(), UPDATE_RELOAD_DELAY_MS);
                       return;
                     }}
@@ -795,6 +798,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             db_relative_path = db_path.relative_to(BASE_DIR)
         except ValueError:
             db_relative_path = None
+        base_resolved = BASE_DIR.resolve()
         updated_count = 0
         for path in repo_root.rglob("*"):
             relative_path = path.relative_to(repo_root)
@@ -803,6 +807,9 @@ class RequestHandler(BaseHTTPRequestHandler):
             if db_relative_path and relative_path == db_relative_path:
                 continue
             destination = BASE_DIR / relative_path
+            destination_resolved = destination.resolve(strict=False)
+            if destination_resolved != base_resolved and base_resolved not in destination_resolved.parents:
+                raise ValueError("Invalid destination path")
             if path.is_dir():
                 destination.mkdir(parents=True, exist_ok=True)
                 continue
