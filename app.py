@@ -244,16 +244,16 @@ class AssignmentStore:
                 connection.execute(
                     """
                     INSERT INTO assignments (masechet, daf, daf_end, name, dedication, learned, is_full_masechet)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    record["masechet"],
-                    record["daf"],
-                    record["daf_end"],
-                    record["name"],
-                    record.get("dedication"),
-                    int(record.get("learned", False)),
-                    int(record.get("is_full_masechet", False)),
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        record["masechet"],
+                        record["daf"],
+                        record["daf_end"],
+                        record["name"],
+                        record.get("dedication"),
+                        int(record.get("learned", False)),
+                        int(record.get("is_full_masechet", False)),
                     ),
                 )
         return len(records)
