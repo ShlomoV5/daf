@@ -632,68 +632,116 @@
         content.innerHTML = '<div class="text-center text-slate-400 py-8">אין דפים לשם זה</div>';
         return;
       }
-      
-      // Check if there's a full masechet
-      const fullMasechet = userAssignments.find(a => a.is_full_masechet);
-      
-      if (fullMasechet) {
-        const mas = MASECHOT_DATA.find(m => m.name === fullMasechet.masechet);
-        const learnedCount = userAssignments.filter(a => a.masechet === fullMasechet.masechet && a.learned).length;
-        
-        const card = document.createElement('div');
-        card.className = 'bg-slate-700/50 rounded-xl p-4 border border-slate-600 mb-4';
-        
-        const progress = (learnedCount / mas.dafim) * 100;
-        
-        card.innerHTML = `
-          <div class="flex justify-between items-center mb-3">
-            <h3 class="font-bold text-amber-400">🏆 ${fullMasechet.masechet}</h3>
-            <span class="text-sm text-slate-400">${learnedCount}/${mas.dafim}</span>
-          </div>
-          <div class="h-2 bg-slate-600 rounded-full overflow-hidden mb-3">
-            <div class="h-full bg-gradient-to-r from-blue-500 to-emerald-500 transition-all" style="width: ${progress}%"></div>
-          </div>
-          ${fullMasechet.dedication ? `<p class="text-slate-400 text-sm mb-3">${fullMasechet.dedication}</p>` : ''}
-          <div class="grid grid-cols-6 gap-1" id="full-masechet-grid-view"></div>
-        `;
-        content.appendChild(card);
-        
-        const grid = document.getElementById('full-masechet-grid-view');
-        const masAssignments = userAssignments.filter(a => a.masechet === fullMasechet.masechet);
-        
-        for (let daf = 2; daf <= mas.dafim + 1; daf++) {
-          const assignment = masAssignments.find(a => a.daf === daf);
-          const cell = document.createElement('button');
-          cell.type = 'button';
-          cell.className = `w-full aspect-square rounded text-xs font-semibold transition-all ${assignment?.learned ? 'bg-emerald-500 text-white' : assignment ? 'bg-blue-500 text-white' : 'bg-slate-600 text-slate-400'}`;
-          cell.textContent = formatDafNumber(daf);
-          cell.onclick = (e) => {
-            e.preventDefault();
-            if (assignment) {
-              window.dataSdk.update({
-                id: assignment.id,
-                learned: !assignment.learned,
-                target_daf: daf
-              }).then(result => {
-                if (result.isOk) {
-                  updateMyPagesView();
-                }
-              });
-            }
-          };
-          grid.appendChild(cell);
+
+      const orderIndex = new Map(MASECHOT_DATA.map((m, index) => [m.name, index]));
+      const byMasechet = {};
+      userAssignments.forEach(a => {
+        if (!byMasechet[a.masechet]) {
+          byMasechet[a.masechet] = [];
         }
-      } else {
-        // Regular single dafim
-        const byMasechet = {};
-        userAssignments.forEach(a => {
-          if (!byMasechet[a.masechet]) {
-            byMasechet[a.masechet] = [];
+        byMasechet[a.masechet].push(a);
+      });
+
+      const sortedMasechot = Object.keys(byMasechet).sort((a, b) => {
+        const orderA = orderIndex.has(a) ? orderIndex.get(a) : Number.MAX_SAFE_INTEGER;
+        const orderB = orderIndex.has(b) ? orderIndex.get(b) : Number.MAX_SAFE_INTEGER;
+        if (orderA === orderB) {
+          return a.localeCompare(b);
+        }
+        return orderA - orderB;
+      });
+
+      sortedMasechot.forEach((masechet, index) => {
+        const items = [...byMasechet[masechet]].sort((a, b) => a.daf - b.daf);
+        const uniqueDafim = [...new Set(items.map(item => item.daf))].sort((a, b) => a - b);
+        const hasFull = items.some(item => item.is_full_masechet);
+        const mas = MASECHOT_DATA.find(m => m.name === masechet);
+
+        const card = document.createElement('div');
+        card.className = 'bg-slate-700/50 rounded-xl p-4 border border-slate-600 space-y-3';
+
+        const header = document.createElement('div');
+        header.className = 'flex items-center justify-between gap-2';
+        header.innerHTML = `
+          <h3 class="font-bold text-amber-400">${hasFull ? '🏆 ' : ''}${masechet}</h3>
+          <button type="button" class="px-2 py-1 bg-red-600/70 hover:bg-red-600 text-white rounded text-xs transition-all" aria-label="הסר מסכת">✕</button>
+        `;
+        header.querySelector('button').onclick = () => confirmDeleteMasechet(selectedName, masechet);
+        card.appendChild(header);
+
+        if (uniqueDafim.length > 0) {
+          const rangeControls = document.createElement('div');
+          const fromId = `range-from-${index}`;
+          const toId = `range-to-${index}`;
+          const buttonId = `range-delete-${index}`;
+          const options = uniqueDafim.map(d => `<option value="${d}">${formatDafNumber(d)}</option>`).join('');
+          rangeControls.className = 'flex flex-wrap items-center gap-2 text-xs text-slate-300';
+          rangeControls.innerHTML = `
+            <span class="text-slate-400">מחק טווח:</span>
+            <select id="${fromId}" class="bg-slate-700 border border-slate-600 rounded-lg px-2 py-1 text-white">${options}</select>
+            <span class="text-slate-400">עד</span>
+            <select id="${toId}" class="bg-slate-700 border border-slate-600 rounded-lg px-2 py-1 text-white">${options}</select>
+            <button type="button" id="${buttonId}" class="px-2 py-1 bg-red-600/70 hover:bg-red-600 text-white rounded text-xs transition-all">הסר</button>
+          `;
+          card.appendChild(rangeControls);
+          const fromSelect = rangeControls.querySelector(`#${fromId}`);
+          const toSelect = rangeControls.querySelector(`#${toId}`);
+          fromSelect.value = uniqueDafim[0];
+          toSelect.value = uniqueDafim[uniqueDafim.length - 1];
+          rangeControls.querySelector(`#${buttonId}`).onclick = () => confirmDeleteRange(selectedName, masechet, fromId, toId);
+        }
+
+        if (hasFull && mas) {
+          const learnedCount = items.filter(item => item.learned).length;
+          const progress = (learnedCount / mas.dafim) * 100;
+          const dedication = items.find(item => item.dedication)?.dedication;
+
+          const progressBlock = document.createElement('div');
+          progressBlock.innerHTML = `
+            <div class="flex justify-between items-center text-sm text-slate-400 mb-2">
+              <span>${learnedCount}/${mas.dafim}</span>
+            </div>
+            <div class="h-2 bg-slate-600 rounded-full overflow-hidden">
+              <div class="h-full bg-gradient-to-r from-blue-500 to-emerald-500 transition-all" style="width: ${progress}%"></div>
+            </div>
+          `;
+          card.appendChild(progressBlock);
+
+          if (dedication) {
+            const dedicationText = document.createElement('p');
+            dedicationText.className = 'text-slate-400 text-sm';
+            dedicationText.textContent = dedication;
+            card.appendChild(dedicationText);
           }
-          byMasechet[a.masechet].push(a);
-        });
-        
-        Object.entries(byMasechet).forEach(([masechet, items]) => {
+
+          const grid = document.createElement('div');
+          grid.className = 'grid grid-cols-6 gap-1';
+          const itemsMap = new Map(items.map(item => [item.daf, item]));
+
+          for (let daf = 2; daf <= mas.dafim + 1; daf++) {
+            const assignment = itemsMap.get(daf);
+            const cell = document.createElement('button');
+            cell.type = 'button';
+            cell.className = `w-full aspect-square rounded text-xs font-semibold transition-all ${assignment?.learned ? 'bg-emerald-500 text-white' : assignment ? 'bg-blue-500 text-white' : 'bg-slate-600 text-slate-400'}`;
+            cell.textContent = formatDafNumber(daf);
+            cell.onclick = (e) => {
+              e.preventDefault();
+              if (assignment) {
+                window.dataSdk.update({
+                  id: assignment.id,
+                  learned: !assignment.learned,
+                  target_daf: daf
+                }).then(result => {
+                  if (result.isOk) {
+                    updateMyPagesView();
+                  }
+                });
+              }
+            };
+            grid.appendChild(cell);
+          }
+          card.appendChild(grid);
+        } else {
           items.forEach(item => {
             const itemDiv = document.createElement('div');
             itemDiv.className = `bg-slate-600/50 rounded-lg p-3 text-sm flex justify-between items-center ${item.learned ? 'opacity-60' : ''}`;
@@ -712,10 +760,12 @@
                 </button>
               </div>
             `;
-            content.appendChild(itemDiv);
+            card.appendChild(itemDiv);
           });
-        });
-      }
+        }
+
+        content.appendChild(card);
+      });
     }
 
     // ========== NAVIGATION ==========
@@ -854,6 +904,65 @@
       `);
     }
 
+    function confirmDeleteMasechet(name, masechet) {
+      window.pendingMasechetDelete = { name, masechet };
+      showModal(`
+        <div class="p-6 text-center">
+          <div class="w-16 h-16 bg-red-600/20 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg class="w-8 h-8 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+            </svg>
+          </div>
+          <h3 class="text-lg font-bold text-white mb-2">מחיקת מסכת</h3>
+          <p class="text-slate-400 mb-4">האם למחוק את כל השיבוצים במסכת ${masechet}?</p>
+          <div class="flex gap-3">
+            <button onclick="closeModal(event)" class="flex-1 bg-slate-600 hover:bg-slate-500 text-white font-semibold py-3 px-4 rounded-xl transition-all">
+              ביטול
+            </button>
+            <button onclick="executeMasechetDelete()" class="flex-1 bg-red-600 hover:bg-red-500 text-white font-semibold py-3 px-4 rounded-xl transition-all">
+              מחק
+            </button>
+          </div>
+        </div>
+      `);
+    }
+
+    function confirmDeleteRange(name, masechet, fromId, toId) {
+      const fromValue = parseInt(document.getElementById(fromId)?.value);
+      const toValue = parseInt(document.getElementById(toId)?.value);
+      if (!fromValue || !toValue) {
+        showToast('אנא בחר טווח', 'error');
+        return;
+      }
+      const start = Math.min(fromValue, toValue);
+      const end = Math.max(fromValue, toValue);
+      window.pendingRangeDelete = {
+        name,
+        masechet,
+        start,
+        end
+      };
+      showModal(`
+        <div class="p-6 text-center">
+          <div class="w-16 h-16 bg-red-600/20 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg class="w-8 h-8 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+            </svg>
+          </div>
+          <h3 class="text-lg font-bold text-white mb-2">מחיקת טווח</h3>
+          <p class="text-slate-400 mb-4">האם למחוק במסכת ${masechet} דפים ${formatDafNumber(start)}-${formatDafNumber(end)}?</p>
+          <div class="flex gap-3">
+            <button onclick="closeModal(event)" class="flex-1 bg-slate-600 hover:bg-slate-500 text-white font-semibold py-3 px-4 rounded-xl transition-all">
+              ביטול
+            </button>
+            <button onclick="executeRangeDelete()" class="flex-1 bg-red-600 hover:bg-red-500 text-white font-semibold py-3 px-4 rounded-xl transition-all">
+              מחק
+            </button>
+          </div>
+        </div>
+      `);
+    }
+
     // ========== AUTO ASSIGN ==========
     function openAutoAssign() {
       showModal(`
@@ -873,6 +982,10 @@
     }
 
     function openFullMasechetAssign() {
+      const takenMasechot = new Set(
+        assignmentRanges.filter(a => a.is_full_masechet).map(a => a.masechet)
+      );
+      let hasSelection = false;
       showModal(`
         <div class="p-6">
           <h3 class="text-lg font-bold text-amber-400 mb-4">מסכת שלימה</h3>
@@ -886,7 +999,14 @@
               <label for="full-masechet" class="block text-sm font-medium text-slate-300 mb-1">בחר מסכת</label>
               <select id="full-masechet"
                 class="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-white focus:border-amber-500 focus:outline-none">
-                ${MASECHOT_DATA.map(m => `<option value="${m.name}">${m.name} (${m.dafim} דפים)</option>`).join('')}
+                ${MASECHOT_DATA.map(m => {
+                  const isTaken = takenMasechot.has(m.name);
+                  const isSelected = !isTaken && !hasSelection;
+                  if (isSelected) {
+                    hasSelection = true;
+                  }
+                  return `<option value="${m.name}" ${isTaken ? 'disabled' : ''} ${isSelected ? 'selected' : ''}>${m.name} (${m.dafim} דפים)${isTaken ? ' - שובצה' : ''}</option>`;
+                }).join('')}
               </select>
             </div>
             <div>
@@ -1351,6 +1471,78 @@
         }
       }
       closeModal({ target: {}, currentTarget: {} });
+    }
+
+    async function executeMasechetDelete() {
+      const pending = window.pendingMasechetDelete;
+      if (!pending) {
+        closeModal({ target: {}, currentTarget: {} });
+        return;
+      }
+      await deleteMasechetAssignments(pending.name, pending.masechet);
+      window.pendingMasechetDelete = null;
+      closeModal({ target: {}, currentTarget: {} });
+    }
+
+    async function deleteMasechetAssignments(name, masechet) {
+      const toDelete = assignmentRanges.filter(
+        record => record.name === name && record.masechet === masechet
+      );
+      if (toDelete.length === 0) {
+        showToast('שיבוץ לא נמצא', 'error');
+        return;
+      }
+      for (const record of toDelete) {
+        const result = await window.dataSdk.delete({ id: record.id });
+        if (!result.isOk) {
+          showToast('שגיאה במחיקה', 'error');
+          return;
+        }
+      }
+      showToast('השיבוץ נמחק');
+      updateMyPagesView();
+    }
+
+    async function executeRangeDelete() {
+      const pending = window.pendingRangeDelete;
+      if (!pending) {
+        closeModal({ target: {}, currentTarget: {} });
+        return;
+      }
+      await deleteMasechetRange(pending.name, pending.masechet, pending.start, pending.end);
+      window.pendingRangeDelete = null;
+      closeModal({ target: {}, currentTarget: {} });
+    }
+
+    async function deleteMasechetRange(name, masechet, start, end) {
+      const rangeStart = Math.min(start, end);
+      const rangeEnd = Math.max(start, end);
+      let deleted = false;
+
+      for (let daf = rangeStart; daf <= rangeEnd; daf++) {
+        const assignment = assignments.find(
+          record => record.name === name && record.masechet === masechet && record.daf === daf
+        );
+        if (!assignment) {
+          continue;
+        }
+        deleted = true;
+        const result = await window.dataSdk.delete({
+          id: assignment.id,
+          target_daf: daf
+        });
+        if (!result.isOk) {
+          showToast('שגיאה במחיקה', 'error');
+          return;
+        }
+      }
+
+      if (!deleted) {
+        showToast('אין דפים למחיקה', 'error');
+        return;
+      }
+      showToast('השיבוץ נמחק');
+      updateMyPagesView();
     }
 
     // ========== CONFIG RENDER ==========
