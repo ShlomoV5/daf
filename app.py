@@ -10,7 +10,13 @@ BASE_DIR = Path(__file__).resolve().parent
 HTML_PATH = BASE_DIR / "base.html"
 DB_PATH = os.environ.get("DB_PATH", str(BASE_DIR / "assignments.db"))
 MAX_CONTENT_LENGTH = 1_000_000
-PAYLOAD_TOO_LARGE = object()
+
+
+class PayloadTooLarge:
+    pass
+
+
+PAYLOAD_TOO_LARGE = PayloadTooLarge()
 
 
 class AssignmentStore:
@@ -140,9 +146,18 @@ class AssignmentStore:
 
         masechet = str(masechet).strip() if masechet is not None else ""
         name = str(name).strip() if name is not None else ""
-        dedication = payload.get("dedication") if payload else defaults.get("dedication")
-        learned = payload.get("learned") if payload else defaults.get("learned", False)
-        is_full_masechet = payload.get("is_full_masechet") if payload else defaults.get("is_full_masechet", False)
+        if payload and "dedication" in payload:
+            dedication = payload.get("dedication")
+        else:
+            dedication = defaults.get("dedication")
+        if payload and "learned" in payload:
+            learned = payload.get("learned")
+        else:
+            learned = defaults.get("learned", False)
+        if payload and "is_full_masechet" in payload:
+            is_full_masechet = payload.get("is_full_masechet")
+        else:
+            is_full_masechet = defaults.get("is_full_masechet", False)
 
         if require_fields and (not masechet or not name or daf is None):
             raise ValueError("Missing required fields")
@@ -245,7 +260,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(content)
 
-    def _read_json(self) -> dict | object | None:
+    def _read_json(self) -> dict | PayloadTooLarge | None:
         try:
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:

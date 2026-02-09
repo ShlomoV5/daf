@@ -1019,8 +1019,8 @@
     async function toggleLearned(recordId) {
       const record = assignments.find(a => a.id === recordId);
       if (!record) return;
-      record.learned = !record.learned;
-      const result = await window.dataSdk.update(record);
+      const updatedRecord = { ...record, learned: !record.learned };
+      const result = await window.dataSdk.update(updatedRecord);
       if (result.isOk) {
         updateMyPagesView();
       } else {
@@ -1085,7 +1085,7 @@
       }
     }
 
-    function logResponseError(action, response) {
+    function logHttpError(action, response) {
       console.error(`${action} failed`, response.status, response.statusText);
     }
 
@@ -1102,7 +1102,7 @@
             body: JSON.stringify(record)
           });
           if (!response.ok) {
-            logResponseError('Create assignment', response);
+            logHttpError('Create assignment', response);
             return { isOk: false };
           }
           await refreshAssignments();
@@ -1123,7 +1123,7 @@
             body: JSON.stringify(record)
           });
           if (!response.ok) {
-            logResponseError('Update assignment', response);
+            logHttpError('Update assignment', response);
             return { isOk: false };
           }
           await refreshAssignments();
@@ -1142,7 +1142,7 @@
             method: 'DELETE'
           });
           if (!response.ok) {
-            logResponseError('Delete assignment', response);
+            logHttpError('Delete assignment', response);
             return { isOk: false };
           }
           await refreshAssignments();
