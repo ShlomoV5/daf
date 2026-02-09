@@ -405,6 +405,9 @@
       const payload = buildCalendarPayload();
       if (!payload) return;
       const url = `mailto:?subject=${encodeURIComponent(payload.title)}&body=${encodeURIComponent(payload.details)}`;
+      if (!url.startsWith('mailto:')) {
+        return;
+      }
       window.location.href = url;
     }
 
@@ -419,16 +422,11 @@
       const successData = window.assignmentSuccessData;
       if (!successData) return;
       try {
-        if (navigator.clipboard?.writeText) {
-          await navigator.clipboard.writeText(successData.shareText);
-        } else {
-          const textarea = document.createElement('textarea');
-          textarea.value = successData.shareText;
-          document.body.appendChild(textarea);
-          textarea.select();
-          document.execCommand('copy');
-          textarea.remove();
+        if (!navigator.clipboard?.writeText) {
+          showToast('לא ניתן להעתיק', 'error');
+          return;
         }
+        await navigator.clipboard.writeText(successData.shareText);
         showToast('הטקסט הועתק!');
       } catch (error) {
         console.error(error);

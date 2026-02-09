@@ -164,17 +164,13 @@ class AssignmentStore:
     def _get_assignments_by_ids(self, assignment_ids: list[int]) -> list[dict]:
         if not assignment_ids:
             return []
-        placeholders = ",".join("?" for _ in assignment_ids)
+        placeholders = ",".join(["?"] * len(assignment_ids))
         with self._get_connection() as connection:
-            cursor = connection.execute(
-                f"""
-                SELECT id, masechet, daf, name, dedication, learned, is_full_masechet
-                FROM assignments
-                WHERE id IN ({placeholders})
-                ORDER BY id
-                """,
-                assignment_ids,
-            )
+            query = (
+                "SELECT id, masechet, daf, name, dedication, learned, is_full_masechet "
+                "FROM assignments WHERE id IN ({}) ORDER BY id"
+            ).format(placeholders)
+            cursor = connection.execute(query, assignment_ids)
             rows = cursor.fetchall()
         return [self._row_to_dict(row) for row in rows]
 
