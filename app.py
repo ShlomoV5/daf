@@ -27,6 +27,12 @@ UPDATE_BRANCH = os.environ.get("GITHUB_BRANCH", "main")
 UPDATE_REPO_ZIP_URL = os.environ.get("GITHUB_REPO_ZIP_URL")
 UPDATE_DOWNLOAD_TIMEOUT = int(os.environ.get("GITHUB_DOWNLOAD_TIMEOUT", "20"))
 UPDATE_RESTART_DELAY = float(os.environ.get("GITHUB_RESTART_DELAY", "1"))
+UPDATE_RELOAD_DELAY_MS = int(
+    os.environ.get(
+        "GITHUB_RELOAD_DELAY_MS",
+        str(int((UPDATE_RESTART_DELAY + 1.5) * 1000)),
+    )
+)
 
 
 class PayloadTooLargeError(Exception):
@@ -602,14 +608,14 @@ class RequestHandler(BaseHTTPRequestHandler):
                   <div id="import-status" class="status"></div>
                 </div>
                 <script>
-                  const UPDATE_RELOAD_DELAY_MS = 2500;
+                  const UPDATE_RELOAD_DELAY_MS = {UPDATE_RELOAD_DELAY_MS};
                   async function updateCodebase() {{
                     const statusEl = document.getElementById('update-status');
                     statusEl.textContent = 'מעדכן קוד...';
                     const response = await fetch('/dafdaf/update', {{ method: 'POST' }});
                     if (response.ok) {{
                       const data = await response.json();
-                      statusEl.textContent = data.message || 'עודכן בהצלחה. אם הסביבה מאפשרת, השרת ייטען מחדש.';
+                      statusEl.textContent = data.message || 'עודכן בהצלחה (תגובה ללא הודעה).';
                       setTimeout(() => window.location.reload(), UPDATE_RELOAD_DELAY_MS);
                       return;
                     }}
@@ -745,8 +751,6 @@ class RequestHandler(BaseHTTPRequestHandler):
     @staticmethod
     def _validate_update_url(url: str) -> None:
         parsed = urlparse(url)
-        if parsed.scheme == "file":
-            return
         if parsed.scheme != "https":
             raise ValueError("Invalid update URL scheme")
         host = parsed.hostname or ""
@@ -763,7 +767,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         for member in archive.infolist():
             member_path = Path(member.filename)
             if member_path.is_absolute() or ".." in member_path.parts:
-                continue
+                raise ValueError("Invalid archive entry")
             target = destination / member_path
             if member.is_dir():
                 target.mkdir(parents=True, exist_ok=True)
@@ -786,13 +790,17 @@ class RequestHandler(BaseHTTPRequestHandler):
     @staticmethod
     def _sync_repo_files(repo_root: Path) -> int:
         skip_dirs = {".git", "__pycache__"}
-        skip_files = {Path(DB_PATH).name}
+        db_path = Path(DB_PATH)
+        try:
+            db_relative_path = db_path.relative_to(BASE_DIR)
+        except ValueError:
+            db_relative_path = None
         updated_count = 0
         for path in repo_root.rglob("*"):
             relative_path = path.relative_to(repo_root)
             if any(part in skip_dirs for part in relative_path.parts):
                 continue
-            if relative_path.name in skip_files:
+            if db_relative_path and relative_path == db_relative_path:
                 continue
             destination = BASE_DIR / relative_path
             if path.is_dir():
