@@ -600,6 +600,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                   <div id="import-status" class="status"></div>
                 </div>
                 <script>
+                  const UPDATE_RELOAD_DELAY_MS = 2500;
                   async function updateCodebase() {{
                     const statusEl = document.getElementById('update-status');
                     statusEl.textContent = 'מעדכן קוד...';
@@ -607,7 +608,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                     if (response.ok) {{
                       const data = await response.json();
                       statusEl.textContent = data.message || 'עודכן בהצלחה. אם הסביבה מאפשרת, השרת ייטען מחדש.';
-                      setTimeout(() => window.location.reload(), 2500);
+                      setTimeout(() => window.location.reload(), UPDATE_RELOAD_DELAY_MS);
                       return;
                     }}
                     statusEl.textContent = 'שגיאה בעדכון הקוד.';
@@ -695,8 +696,9 @@ class RequestHandler(BaseHTTPRequestHandler):
         try:
             updated_count = self._perform_code_update()
         except (OSError, ValueError, zipfile.BadZipFile) as error:
+            error_name = type(error).__name__
             self._send_json(
-                {"error": "Update failed", "details": str(error)},
+                {"error": "Update failed", "details": f"{error_name}: {error}"},
                 status=500,
             )
             return
@@ -730,8 +732,29 @@ class RequestHandler(BaseHTTPRequestHandler):
     @staticmethod
     def _get_update_url() -> str:
         if UPDATE_REPO_ZIP_URL:
-            return UPDATE_REPO_ZIP_URL
-        return f"https://github.com/{UPDATE_REPO}/archive/refs/heads/{UPDATE_BRANCH}.zip"
+            url = UPDATE_REPO_ZIP_URL
+        else:
+            url = (
+                f"https://github.com/{UPDATE_REPO}/archive/refs/heads/{UPDATE_BRANCH}.zip"
+            )
+        RequestHandler._validate_update_url(url)
+        return url
+
+    @staticmethod
+    def _validate_update_url(url: str) -> None:
+        parsed = urlparse(url)
+        if parsed.scheme == "file":
+            return
+        if parsed.scheme != "https":
+            raise ValueError("Invalid update URL scheme")
+        host = parsed.hostname or ""
+        allowed_hosts = {
+            "github.com",
+            "codeload.github.com",
+            "objects.githubusercontent.com",
+        }
+        if host not in allowed_hosts:
+            raise ValueError("Invalid update URL host")
 
     @staticmethod
     def _safe_extract_archive(archive: zipfile.ZipFile, destination: Path) -> None:
@@ -782,7 +805,10 @@ class RequestHandler(BaseHTTPRequestHandler):
     def _schedule_restart() -> None:
         def _restart() -> None:
             time.sleep(1)
-            os.execv(sys.executable, [sys.executable, *sys.argv])
+            try:
+                os.execv(sys.executable, [sys.executable, *sys.argv])
+            except OSError as error:
+                print(f"Failed to restart server: {error}")
 
         threading.Thread(target=_restart, daemon=True).start()
 
