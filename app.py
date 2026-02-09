@@ -1,8 +1,19 @@
 import base64
+import html
+import io
 import json
 import os
+import shutil
+import ssl
+import stat
 import sqlite3
+import sys
+import tempfile
+import threading
+import time
+import urllib.request
 import uuid
+import zipfile
 from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -14,6 +25,17 @@ HTML_PATH = BASE_DIR / "base.html"
 DB_PATH = os.environ.get("DB_PATH", str(BASE_DIR / "assignments.db"))
 MAX_CONTENT_LENGTH = 1_000_000
 BACKUP_PASSWORD = os.environ.get("BACKUP_PASSWORD", "123123")
+UPDATE_REPO = os.environ.get("GITHUB_REPO", "ShlomoV5/daf")
+UPDATE_BRANCH = os.environ.get("GITHUB_BRANCH", "main")
+UPDATE_REPO_ZIP_URL = os.environ.get("GITHUB_REPO_ZIP_URL")
+UPDATE_DOWNLOAD_TIMEOUT = int(os.environ.get("GITHUB_DOWNLOAD_TIMEOUT", "20"))
+UPDATE_RESTART_DELAY = float(os.environ.get("GITHUB_RESTART_DELAY", "1"))
+UPDATE_RELOAD_DELAY_MS = int(
+    os.environ.get(
+        "GITHUB_RELOAD_DELAY_MS",
+        str(int((UPDATE_RESTART_DELAY + 1.5) * 1000)),
+    )
+)
 
 
 class PayloadTooLargeError(Exception):
@@ -434,6 +456,9 @@ class RequestHandler(BaseHTTPRequestHandler):
         if self.path.startswith("/dafdaf/import"):
             self._handle_backup_import()
             return
+        if self.path == "/dafdaf/update":
+            self._handle_code_update()
+            return
         if self.path != "/api/assignments":
             self.send_error(404, "Not Found")
             return
@@ -550,6 +575,8 @@ class RequestHandler(BaseHTTPRequestHandler):
     def _serve_backup_page(self) -> None:
         if not self._require_backup_auth():
             return
+        safe_repo = html.escape(UPDATE_REPO)
+        safe_branch = html.escape(UPDATE_BRANCH)
         self._send_html(
             f"""
             <!DOCTYPE html>
@@ -573,6 +600,12 @@ class RequestHandler(BaseHTTPRequestHandler):
                   <a href="/dafdaf/export">הורד גיבוי</a>
                 </div>
                 <div class="card">
+                  <h2>עדכון מ-GitHub</h2>
+                  <p class="muted">משיכת הקוד מתוך {safe_repo} (ענף {safe_branch}). הנתונים נשמרים.</p>
+                  <button type="button" onclick="updateCodebase()">עדכן קוד</button>
+                  <div id="update-status" class="status"></div>
+                </div>
+                <div class="card">
                   <h2>יבוא נתונים</h2>
                   <p class="muted">הדבק כאן קובץ JSON מהגיבוי ולחץ על "ייבא".</p>
                   <textarea id="import-data" placeholder='[{{"masechet":"ברכות","daf":2,"name":"...","dedication":"","learned":false,"is_full_masechet":false}}]'></textarea>
@@ -580,6 +613,20 @@ class RequestHandler(BaseHTTPRequestHandler):
                   <div id="import-status" class="status"></div>
                 </div>
                 <script>
+                  const UPDATE_RELOAD_DELAY_MS = {json.dumps(UPDATE_RELOAD_DELAY_MS)};
+                  async function updateCodebase() {{
+                    const statusEl = document.getElementById('update-status');
+                    statusEl.textContent = 'מעדכן קוד...';
+                    const response = await fetch('/dafdaf/update', {{ method: 'POST' }});
+                    if (response.ok) {{
+                      const data = await response.json();
+                      statusEl.textContent = data.message;
+                      setTimeout(() => window.location.reload(), UPDATE_RELOAD_DELAY_MS);
+                      return;
+                    }}
+                    statusEl.textContent = 'שגיאה בעדכון הקוד.';
+                  }}
+
                   async function importData() {{
                     const statusEl = document.getElementById('import-status');
                     statusEl.textContent = '';
@@ -655,6 +702,147 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._send_json({"error": "Assignment already exists"}, status=409)
             return
         self._send_json({"ok": True, "count": count})
+
+    def _handle_code_update(self) -> None:
+        if not self._require_backup_auth():
+            return
+        try:
+            updated_count = self._perform_code_update()
+        except (OSError, ValueError, zipfile.BadZipFile) as error:
+            error_name = type(error).__name__
+            self._send_json(
+                {"error": "Update failed", "details": f"{error_name}: {error}"},
+                status=500,
+            )
+            return
+        self._send_json(
+            {
+                "ok": True,
+                "message": (
+                    f"עודכנו {updated_count} קבצים. אם הסביבה מאפשרת, השרת ייטען מחדש."
+                ),
+            }
+        )
+        self._schedule_restart()
+
+    def _perform_code_update(self) -> int:
+        update_url = self._get_update_url()
+        context = ssl.create_default_context()
+        with urllib.request.urlopen(
+            update_url, timeout=UPDATE_DOWNLOAD_TIMEOUT, context=context
+        ) as response:
+            status = getattr(response, "status", 200)
+            if status not in (200, None):
+                raise ValueError(
+                    f"Failed to download update from {update_url} (status {status})"
+                )
+            payload = response.read()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            extract_dir = Path(temp_dir) / "repo"
+            extract_dir.mkdir(parents=True, exist_ok=True)
+            with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+                self._safe_extract_archive(archive, extract_dir)
+            repo_root = self._resolve_repo_root(extract_dir)
+            return self._sync_repo_files(repo_root)
+
+    @staticmethod
+    def _get_update_url() -> str:
+        if UPDATE_REPO_ZIP_URL:
+            url = UPDATE_REPO_ZIP_URL
+        else:
+            url = (
+                f"https://github.com/{UPDATE_REPO}/archive/refs/heads/{UPDATE_BRANCH}.zip"
+            )
+        RequestHandler._validate_update_url(url)
+        return url
+
+    @staticmethod
+    def _validate_update_url(url: str) -> None:
+        parsed = urlparse(url)
+        if parsed.scheme != "https":
+            raise ValueError("Invalid update URL scheme")
+        host = parsed.hostname or ""
+        allowed_hosts = {
+            "github.com",
+            "codeload.github.com",
+            "objects.githubusercontent.com",
+        }
+        if host not in allowed_hosts:
+            raise ValueError("Invalid update URL host")
+
+    @staticmethod
+    def _safe_extract_archive(archive: zipfile.ZipFile, destination: Path) -> None:
+        for member in archive.infolist():
+            member_path = Path(member.filename)
+            if RequestHandler._is_symlink_member(member):
+                raise ValueError("Invalid archive entry")
+            if member_path.is_absolute() or ".." in member_path.parts:
+                raise ValueError("Invalid archive entry")
+            target = destination / member_path
+            if member.is_dir():
+                target.mkdir(parents=True, exist_ok=True)
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with archive.open(member) as source, open(target, "wb") as target_file:
+                shutil.copyfileobj(source, target_file)
+
+    @staticmethod
+    def _is_symlink_member(member: zipfile.ZipInfo) -> bool:
+        return stat.S_ISLNK(member.external_attr >> 16)
+
+    @staticmethod
+    def _resolve_repo_root(extract_dir: Path) -> Path:
+        candidates = [
+            entry
+            for entry in extract_dir.iterdir()
+            if entry.is_dir() and entry.name != ".git"
+        ]
+        if len(candidates) == 1:
+            return candidates[0]
+        return extract_dir
+
+    @staticmethod
+    def _sync_repo_files(repo_root: Path) -> int:
+        skip_dirs = {".git", "__pycache__"}
+        db_path = Path(DB_PATH)
+        try:
+            db_relative_path = db_path.relative_to(BASE_DIR)
+        except ValueError:
+            db_relative_path = None
+        updated_count = 0
+        for path in repo_root.rglob("*"):
+            relative_path = path.relative_to(repo_root)
+            if any(part in skip_dirs for part in relative_path.parts):
+                continue
+            if db_relative_path and relative_path == db_relative_path:
+                continue
+            destination = BASE_DIR / relative_path
+            if not RequestHandler._is_path_within_base_dir(destination):
+                raise ValueError("Invalid destination path")
+            if path.is_dir():
+                destination.mkdir(parents=True, exist_ok=True)
+                continue
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, destination)
+            updated_count += 1
+        return updated_count
+
+    @staticmethod
+    def _schedule_restart() -> None:
+        def _restart() -> None:
+            time.sleep(UPDATE_RESTART_DELAY)
+            try:
+                os.execv(sys.executable, [sys.executable, *sys.argv])
+            except OSError as error:
+                print(f"Failed to restart server: {error}")
+
+        threading.Thread(target=_restart, daemon=True).start()
+
+    @staticmethod
+    def _is_path_within_base_dir(destination: Path) -> bool:
+        base_resolved = BASE_DIR.resolve()
+        destination_resolved = destination.resolve(strict=False)
+        return destination_resolved == base_resolved or base_resolved in destination_resolved.parents
 
     def _send_html(self, content: str, *, status: int = 200) -> None:
         body = content.encode("utf-8")
