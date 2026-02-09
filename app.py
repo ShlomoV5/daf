@@ -25,6 +25,8 @@ BACKUP_PASSWORD = os.environ.get("BACKUP_PASSWORD", "123123")
 UPDATE_REPO = os.environ.get("GITHUB_REPO", "ShlomoV5/daf")
 UPDATE_BRANCH = os.environ.get("GITHUB_BRANCH", "main")
 UPDATE_REPO_ZIP_URL = os.environ.get("GITHUB_REPO_ZIP_URL")
+UPDATE_DOWNLOAD_TIMEOUT = int(os.environ.get("GITHUB_DOWNLOAD_TIMEOUT", "20"))
+UPDATE_RESTART_DELAY = float(os.environ.get("GITHUB_RESTART_DELAY", "1"))
 
 
 class PayloadTooLargeError(Exception):
@@ -714,7 +716,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     def _perform_code_update(self) -> int:
         update_url = self._get_update_url()
-        with urllib.request.urlopen(update_url, timeout=20) as response:
+        with urllib.request.urlopen(update_url, timeout=UPDATE_DOWNLOAD_TIMEOUT) as response:
             status = getattr(response, "status", 200)
             if status not in (200, None):
                 raise ValueError(
@@ -804,7 +806,7 @@ class RequestHandler(BaseHTTPRequestHandler):
     @staticmethod
     def _schedule_restart() -> None:
         def _restart() -> None:
-            time.sleep(1)
+            time.sleep(UPDATE_RESTART_DELAY)
             try:
                 os.execv(sys.executable, [sys.executable, *sys.argv])
             except OSError as error:
