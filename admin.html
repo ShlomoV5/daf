@@ -1175,6 +1175,78 @@
       showActionDoneModal('הדפים סומנו כנלמד.');
     }
 
+    async function runAllLearnerMasechetRangeAction(userKey, masechet, rangeFromSelectId, rangeToSelectId, actionSelectId) {
+      const user = getUserByKey(userKey);
+      if (!user) {
+        showToast('הלומד לא נמצא', 'error');
+        return;
+      }
+      const fromDaf = parseInt(document.getElementById(rangeFromSelectId)?.value);
+      const toDaf = parseInt(document.getElementById(rangeToSelectId)?.value);
+      const action = document.getElementById(actionSelectId)?.value;
+      if (Number.isNaN(fromDaf) || Number.isNaN(toDaf) || !action) {
+        showToast('יש לבחור טווח ופעולה', 'error');
+        return;
+      }
+      const rangeStart = Math.min(fromDaf, toDaf);
+      const rangeEnd = Math.max(fromDaf, toDaf);
+      const userRecordIds = new Set(user.records.map(record => record.id));
+      const dafAssignments = assignments.filter(record =>
+        userRecordIds.has(record.id)
+        && record.masechet === masechet
+        && record.daf >= rangeStart
+        && record.daf <= rangeEnd
+      );
+      if (!dafAssignments.length) {
+        showToast('אין דפים בטווח שנבחר', 'error');
+        return;
+      }
+
+      if (action === 'learned') {
+        let updated = false;
+        for (const assignment of dafAssignments) {
+          if (assignment.learned) {
+            continue;
+          }
+          const result = await window.dataSdk.update({
+            id: assignment.id,
+            learned: true,
+            target_daf: assignment.daf
+          }, { skipRefresh: true });
+          if (!result.isOk) {
+            showToast('שגיאה בעדכון', 'error');
+            return;
+          }
+          updated = true;
+        }
+        if (!updated) {
+          showToast('כל הדפים בטווח כבר מסומנים כנלמד', 'info');
+          return;
+        }
+        await refreshAssignments();
+        showActionDoneModal('הדפים סומנו כנלמד.');
+        return;
+      }
+
+      if (action === 'delete') {
+        for (const assignment of dafAssignments) {
+          const result = await window.dataSdk.delete({
+            id: assignment.id,
+            target_daf: assignment.daf
+          }, { skipRefresh: true });
+          if (!result.isOk) {
+            showToast('שגיאה במחיקה', 'error');
+            return;
+          }
+        }
+        await refreshAssignments();
+        showActionDoneModal('הדפים נמחקו.');
+        return;
+      }
+
+      showToast('פעולה לא נתמכת', 'error');
+    }
+
     function renderAllLearnersView() {
       const content = document.getElementById('all-learners-content');
       if (!content) return;
@@ -1230,43 +1302,100 @@
       content.appendChild(quickCard);
       updateAllLearnersQuickAddOptions();
 
+      const userRecordIds = new Set(user.records.map(record => record.id));
+      const userAssignments = assignments.filter(record => userRecordIds.has(record.id));
       const grouped = {};
-      user.records.forEach(record => {
+      userAssignments.forEach(record => {
         if (!grouped[record.masechet]) {
           grouped[record.masechet] = [];
         }
         grouped[record.masechet].push(record);
       });
+
+      if (Object.keys(grouped).length === 0) {
+        content.innerHTML += '<div class="text-center text-slate-400 py-8">אין דפים ללומד זה</div>';
+        return;
+      }
+
       const orderIndex = new Map(MASECHOT_DATA.map((m, index) => [m.name, index]));
       const sortedMasechot = Object.keys(grouped).sort((a, b) => (orderIndex.get(a) ?? 999) - (orderIndex.get(b) ?? 999));
 
-      sortedMasechot.forEach(masechet => {
+      sortedMasechot.forEach((masechet, index) => {
         const safeMasechet = escapeHtml(masechet);
+        const mas = MASECHOT_DATA.find(item => item.name === masechet);
+        const items = grouped[masechet].slice().sort((a, b) => a.daf - b.daf);
+        const assignedDafim = [...new Set(items.map(item => item.daf))].sort((a, b) => a - b);
+        const learnedCount = items.filter(item => item.learned).length;
+        const progressTotal = assignedDafim.length || 1;
+
         const card = document.createElement('div');
-        card.className = 'bg-slate-700/50 rounded-xl p-4 border border-slate-600 space-y-2';
-        const rows = grouped[masechet]
-          .slice()
-          .sort((a, b) => a.daf - b.daf)
-          .map(record => {
-            const start = formatDafNumber(record.daf);
-            const endRaw = record.daf_end ?? record.daf;
-            const end = formatDafNumber(endRaw);
-            const batchText = record.daf === endRaw ? `${start}` : `${start} עד ${end}`;
-            return `
-              <div class="bg-slate-600/50 rounded-lg p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                <div>
-                  <div class="font-semibold text-white">${safeMasechet}</div>
-                  <div class="text-sm text-slate-300">אצווה: ${batchText}</div>
-                  <div class="text-xs ${record.learned ? 'text-emerald-400' : 'text-blue-300'}">${record.learned ? 'נלמד' : 'משובץ'}</div>
-                </div>
-                <div class="flex gap-2">
-                  <button type="button" onclick="markAllLearnerBatchRead(${record.id})" class="px-2 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs transition-all">סמן כנלמד</button>
-                  <button type="button" onclick="deleteAllLearnerBatch(${record.id})" class="px-2 py-1 bg-red-600 hover:bg-red-500 text-white rounded text-xs transition-all">מחק</button>
-                </div>
-              </div>
-            `;
-          }).join('');
-        card.innerHTML = `<h3 class="font-bold text-amber-400">${safeMasechet}</h3>${rows}`;
+        card.className = 'bg-slate-700/50 rounded-xl p-4 border border-slate-600 space-y-3';
+        const rangeFromSelectId = `all-range-from-${index}`;
+        const rangeToSelectId = `all-range-to-${index}`;
+        const rangeActionSelectId = `all-range-action-${index}`;
+        const rangeApplyButtonId = `all-range-apply-${index}`;
+        const options = assignedDafim.map(daf => `<option value="${daf}">${formatDafNumber(daf)}</option>`).join('');
+
+        card.innerHTML = `
+          <div class="flex items-center justify-between gap-2">
+            <h3 class="font-bold text-amber-400">${safeMasechet}</h3>
+            <span class="text-xs text-slate-300">${learnedCount}/${assignedDafim.length} נלמד</span>
+          </div>
+          <div class="h-2 bg-slate-600 rounded-full overflow-hidden">
+            <div class="h-full bg-gradient-to-r from-blue-500 to-emerald-500 transition-all" style="width: ${(learnedCount / progressTotal) * 100}%"></div>
+          </div>
+          <div class="grid sm:grid-cols-[1fr_1fr_1fr_auto] gap-2 text-xs">
+            <select id="${rangeFromSelectId}" class="bg-slate-700 border border-slate-600 rounded-lg px-2 py-2 text-white">${options}</select>
+            <select id="${rangeToSelectId}" class="bg-slate-700 border border-slate-600 rounded-lg px-2 py-2 text-white">${options}</select>
+            <select id="${rangeActionSelectId}" class="bg-slate-700 border border-slate-600 rounded-lg px-2 py-2 text-white">
+              <option value="learned">סמן כנלמד</option>
+              <option value="delete">מחק</option>
+            </select>
+            <button id="${rangeApplyButtonId}" type="button" class="px-3 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg transition-all">בצע</button>
+          </div>
+        `;
+
+        const fromSelect = card.querySelector(`#${rangeFromSelectId}`);
+        const toSelect = card.querySelector(`#${rangeToSelectId}`);
+        if (fromSelect && toSelect) {
+          fromSelect.value = assignedDafim[0];
+          toSelect.value = assignedDafim[assignedDafim.length - 1];
+        }
+        const applyButton = card.querySelector(`#${rangeApplyButtonId}`);
+        if (applyButton) {
+          applyButton.onclick = () => runAllLearnerMasechetRangeAction(
+            user.key,
+            masechet,
+            rangeFromSelectId,
+            rangeToSelectId,
+            rangeActionSelectId
+          );
+        }
+
+        if (mas) {
+          const itemsMap = new Map(items.map(item => [item.daf, item]));
+          const grid = document.createElement('div');
+          grid.className = 'grid grid-cols-6 gap-1';
+          for (let daf = 2; daf <= mas.dafim + 1; daf += 1) {
+            const assignment = itemsMap.get(daf);
+            const cell = document.createElement('div');
+            cell.className = `w-full aspect-square rounded text-xs font-semibold flex items-center justify-center ${assignment?.learned ? 'bg-emerald-500 text-white' : assignment ? 'bg-blue-500 text-white' : 'bg-slate-600 text-slate-400'}`;
+            cell.textContent = formatDafNumber(daf);
+            grid.appendChild(cell);
+          }
+          card.appendChild(grid);
+        } else {
+          const list = document.createElement('div');
+          list.className = 'grid grid-cols-6 gap-1';
+          items.forEach(item => {
+            const cell = document.createElement('div');
+            cell.className = `w-full aspect-square rounded text-xs font-semibold flex items-center justify-center ${item.learned ? 'bg-emerald-500 text-white' : 'bg-blue-500 text-white'}`;
+            cell.textContent = formatDafNumber(item.daf);
+            list.appendChild(cell);
+          });
+          card.appendChild(list);
+        }
+
         content.appendChild(card);
       });
     }
@@ -2291,7 +2420,7 @@
           return { isOk: false };
         }
       },
-      async delete(record) {
+      async delete(record, options = {}) {
         if (!record?.id) {
           return { isOk: false };
         }
@@ -2307,7 +2436,9 @@
             logHttpError('Delete assignment', response);
             return { isOk: false };
           }
-          await refreshAssignments();
+          if (!options.skipRefresh) {
+            await refreshAssignments();
+          }
           return { isOk: true };
         } catch (error) {
           console.error(error);
