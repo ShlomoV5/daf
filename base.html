@@ -333,6 +333,7 @@
       }
       const choice = await openPhoneConflictModal(existing.name, name);
       if (choice !== 'use_existing') {
+        showToast('הזן מספר טלפון אחר ונסה שוב', 'info');
         return null;
       }
       return {
