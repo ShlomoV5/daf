@@ -126,6 +126,11 @@
     .daf-state-range-start {
       box-shadow: 0 0 0 2px var(--seder-color);
     }
+    .daf-state-selected.daf-state-range-start {
+      box-shadow:
+        0 0 0 1px rgba(253, 230, 138, 0.98),
+        0 0 0 3px var(--seder-color);
+    }
     .seder-zeraim {
       --seder-color: #059669;
       --seder-color-soft: rgba(5, 150, 105, 0.13);
@@ -1060,7 +1065,7 @@
               else if (st === 'learned') className += 'daf-state-learned';
               else if (st === 'assigned') className += 'daf-state-assigned';
               else className += 'daf-state-free';
-              if (!isSelected && isRangeStart) className += ' daf-state-range-start';
+              if (isRangeStart) className += ' daf-state-range-start';
               return (
                 <button
                   key={daf}
@@ -1173,10 +1178,9 @@
       setSelected(next);
     };
 
-    const handleDafClick = (masechet, daf) => {
+    const handleModalDafClick = (masechet, daf) => {
       if (selectionMode) { toggleSelection(masechet, daf); return; }
       const a = getAssignment(masechet, daf);
-      setMasechetTarget(null);
       if (!a) { setAssignTarget({masechet, daf}); }
       else { setViewTarget({masechet, daf, assignment:a}); }
     };
@@ -1266,7 +1270,7 @@
             selectionMode={selectionMode}
             selected={selected}
             rangeStart={rangeStart}
-            onDafClick={handleDafClick}
+            onDafClick={handleModalDafClick}
             onClose={()=>setMasechetTarget(null)}
             onClearSelection={resetSelection}
           />
