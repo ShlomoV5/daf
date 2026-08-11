@@ -35,6 +35,7 @@ class AssignmentStore:
                     daf INTEGER NOT NULL,
                     daf_end INTEGER,
                     name TEXT NOT NULL,
+                    phone TEXT,
                     dedication TEXT,
                     learned INTEGER NOT NULL DEFAULT 0,
                     is_full_masechet INTEGER NOT NULL DEFAULT 0,
@@ -49,11 +50,13 @@ class AssignmentStore:
             if "daf_end" not in columns:
                 connection.execute("ALTER TABLE assignments ADD COLUMN daf_end INTEGER")
             connection.execute("UPDATE assignments SET daf_end = daf WHERE daf_end IS NULL")
+            if "phone" not in columns:
+                connection.execute("ALTER TABLE assignments ADD COLUMN phone TEXT")
 
     def list_assignments(self) -> list[dict]:
         with self._get_connection() as connection:
             cursor = connection.execute(
-                "SELECT id, masechet, daf, daf_end, name, dedication, learned, is_full_masechet FROM assignments "
+                "SELECT id, masechet, daf, daf_end, name, phone, dedication, learned, is_full_masechet FROM assignments "
                 "ORDER BY masechet, daf"
             )
             rows = cursor.fetchall()
@@ -62,7 +65,7 @@ class AssignmentStore:
     def get_assignment(self, assignment_id: int) -> dict | None:
         with self._get_connection() as connection:
             cursor = connection.execute(
-                "SELECT id, masechet, daf, daf_end, name, dedication, learned, is_full_masechet "
+                "SELECT id, masechet, daf, daf_end, name, phone, dedication, learned, is_full_masechet "
                 "FROM assignments WHERE id = ?",
                 (assignment_id,),
             )
@@ -87,14 +90,15 @@ class AssignmentStore:
                     raise sqlite3.IntegrityError("Assignment overlap")
                 cursor = connection.execute(
                     """
-                    INSERT INTO assignments (masechet, daf, daf_end, name, dedication, learned, is_full_masechet)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO assignments (masechet, daf, daf_end, name, phone, dedication, learned, is_full_masechet)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         record["masechet"],
                         record["daf"],
                         record["daf_end"],
                         record["name"],
+                        record["phone"],
                         record.get("dedication"),
                         int(record.get("learned", False)),
                         int(record.get("is_full_masechet", False)),
@@ -120,7 +124,7 @@ class AssignmentStore:
             connection.execute(
                 """
                 UPDATE assignments
-                SET masechet = ?, daf = ?, daf_end = ?, name = ?, dedication = ?, learned = ?, is_full_masechet = ?
+                SET masechet = ?, daf = ?, daf_end = ?, name = ?, phone = ?, dedication = ?, learned = ?, is_full_masechet = ?
                 WHERE id = ?
                 """,
                 (
@@ -128,6 +132,7 @@ class AssignmentStore:
                     record["daf"],
                     record["daf_end"],
                     record["name"],
+                    record["phone"],
                     record.get("dedication"),
                     int(record.get("learned", False)),
                     int(record.get("is_full_masechet", False)),
@@ -161,14 +166,15 @@ class AssignmentStore:
             for segment_start, segment_end, segment_learned in segments:
                 connection.execute(
                     """
-                    INSERT INTO assignments (masechet, daf, daf_end, name, dedication, learned, is_full_masechet)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO assignments (masechet, daf, daf_end, name, phone, dedication, learned, is_full_masechet)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         record["masechet"],
                         segment_start,
                         segment_end,
                         record["name"],
+                        record["phone"],
                         record.get("dedication"),
                         int(segment_learned),
                         int(record.get("is_full_masechet", False)),
@@ -218,14 +224,15 @@ class AssignmentStore:
             ):
                 connection.execute(
                     """
-                    INSERT INTO assignments (masechet, daf, daf_end, name, dedication, learned, is_full_masechet)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO assignments (masechet, daf, daf_end, name, phone, dedication, learned, is_full_masechet)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         record["masechet"],
                         segment_start,
                         segment_end,
                         record["name"],
+                        record["phone"],
                         record.get("dedication"),
                         int(record.get("learned", False)),
                         int(record.get("is_full_masechet", False)),
@@ -243,14 +250,15 @@ class AssignmentStore:
             for record in records:
                 connection.execute(
                     """
-                    INSERT INTO assignments (masechet, daf, daf_end, name, dedication, learned, is_full_masechet)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO assignments (masechet, daf, daf_end, name, phone, dedication, learned, is_full_masechet)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         record["masechet"],
                         record["daf"],
                         record["daf_end"],
                         record["name"],
+                        record["phone"],
                         record.get("dedication"),
                         int(record.get("learned", False)),
                         int(record.get("is_full_masechet", False)),
@@ -273,6 +281,7 @@ class AssignmentStore:
             "daf": row["daf"],
             "daf_end": row["daf_end"] if row["daf_end"] is not None else row["daf"],
             "name": row["name"],
+            "phone": row["phone"] or "",
             "dedication": row["dedication"] or "",
             "learned": bool(row["learned"]),
             "is_full_masechet": bool(row["is_full_masechet"]),
@@ -318,7 +327,7 @@ class AssignmentStore:
         with self._get_connection() as connection:
             cursor = connection.execute(
                 """
-                SELECT id, masechet, daf, daf_end, name, dedication, learned, is_full_masechet
+                SELECT id, masechet, daf, daf_end, name, phone, dedication, learned, is_full_masechet
                 FROM assignments
                 WHERE masechet = ? AND ? BETWEEN daf AND COALESCE(daf_end, daf)
                 LIMIT 1
@@ -334,7 +343,7 @@ class AssignmentStore:
         placeholders = ",".join(["?"] * len(assignment_ids))
         with self._get_connection() as connection:
             query = (
-                "SELECT id, masechet, daf, daf_end, name, dedication, learned, is_full_masechet "
+                "SELECT id, masechet, daf, daf_end, name, phone, dedication, learned, is_full_masechet "
                 "FROM assignments WHERE id IN ({}) ORDER BY id"
             ).format(placeholders)
             cursor = connection.execute(query, assignment_ids)
@@ -351,6 +360,9 @@ class AssignmentStore:
         defaults = defaults or {}
         masechet = (payload.get("masechet") if payload else None) or defaults.get("masechet")
         name = (payload.get("name") if payload else None) or defaults.get("name")
+        phone = (payload.get("phone") if payload else None)
+        if phone is None:
+            phone = defaults.get("phone")
         daf = payload.get("daf") if payload else None
         if daf is None:
             daf = defaults.get("daf")
@@ -360,6 +372,7 @@ class AssignmentStore:
 
         masechet = str(masechet).strip() if masechet is not None else ""
         name = str(name).strip() if name is not None else ""
+        phone = str(phone).strip() if phone is not None else ""
         if payload and "dedication" in payload:
             dedication = payload.get("dedication")
         else:
@@ -373,7 +386,7 @@ class AssignmentStore:
         else:
             is_full_masechet = defaults.get("is_full_masechet", False)
 
-        if require_fields and (not masechet or not name or daf is None):
+        if require_fields and (not masechet or not name or not phone or daf is None):
             raise ValueError("Missing required fields")
 
         try:
@@ -393,6 +406,7 @@ class AssignmentStore:
         return {
             "masechet": masechet,
             "name": name,
+            "phone": phone,
             "daf": daf_value,
             "daf_end": daf_end_value,
             "dedication": str(dedication).strip() if dedication is not None else "",
@@ -575,7 +589,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 <div class="card">
                   <h2>יבוא נתונים</h2>
                   <p class="muted">הדבק כאן קובץ JSON מהגיבוי ולחץ על "ייבא".</p>
-                  <textarea id="import-data" placeholder='[{{"masechet":"ברכות","daf":2,"name":"...","dedication":"","learned":false,"is_full_masechet":false}}]'></textarea>
+                  <textarea id="import-data" placeholder='[{{"masechet":"ברכות","daf":2,"name":"...","phone":"0500000000","dedication":"","learned":false,"is_full_masechet":false}}]'></textarea>
                   <button type="button" onclick="importData()">ייבא נתונים</button>
                   <div id="import-status" class="status"></div>
                 </div>
