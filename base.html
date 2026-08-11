@@ -893,6 +893,7 @@
       const result = await window.dataSdk.createBulk(pendingSelection.records,{skipRefresh:true});
       if (result.isOk) {
         await refreshAssignments();
+        setLoading(false);
         setPendingSelection(null);
         resetSelection();
         setSuccess({name:pendingSelection.identity.name,recs:pendingSelection.records});
@@ -1087,7 +1088,7 @@
             </div>
           </Modal>
         )}
-        {success && <SuccessModal name={success.name} assignments={success.recs} onClose={()=>setSuccess(null)} />}
+        {success && <SuccessModal name={success.name} assignments={success.recs} onClose={()=>{ setSuccess(null); if (selectionMode) navigate('home'); }} />}
       </div>
     );
   };
