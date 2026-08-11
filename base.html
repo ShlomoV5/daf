@@ -28,6 +28,9 @@
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <style>
+    html, body { height: 100%; }
+    body { margin: 0; min-height: 100dvh; overflow: hidden; }
+    #root { height: 100%; min-height: 100dvh; }
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); border-radius: 3px; }
     ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 3px; }
@@ -43,6 +46,101 @@
     .worm-frame { box-shadow: 0 12px 30px rgba(15, 23, 42, 0.28); }
     .worm-pixel { transition: transform 0.15s ease, opacity 0.15s ease; }
     .worm-pixel:hover { transform: translateY(-1px); }
+    .worm-map-shell {
+      --worm-cell-size: 6px;
+      --worm-gap: 1px;
+      --worm-radius: 2px;
+      --worm-label-font-size: 11px;
+      --worm-border-size: 2px;
+      display: grid;
+      width: fit-content;
+      max-width: 100%;
+      grid-auto-flow: row dense;
+      gap: var(--worm-gap);
+      margin-inline: auto;
+      align-content: center;
+      justify-content: center;
+    }
+    .worm-label,
+    .worm-cell {
+      box-sizing: border-box;
+      border-style: solid;
+      border-width: var(--worm-border-size);
+      border-radius: var(--worm-radius);
+    }
+    .worm-label {
+      min-width: 0;
+      height: var(--worm-cell-size);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      padding: 0 2px;
+      font-weight: 700;
+      font-size: var(--worm-label-font-size);
+      line-height: 1;
+      color: rgb(248 250 252);
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      background: var(--seder-color);
+      border-color: var(--seder-color);
+    }
+    .worm-cell {
+      width: var(--worm-cell-size);
+      height: var(--worm-cell-size);
+      background: rgba(51, 65, 85, 0.9);
+      border-color: rgba(100, 116, 139, 0.9);
+    }
+    .worm-cell--free {
+      background: var(--seder-color-soft);
+      border-color: var(--seder-border-color);
+    }
+    .worm-cell--assigned {
+      background: #3b82f6;
+      border-color: #bfdbfe;
+    }
+    .worm-cell--learned {
+      background: #10b981;
+      border-color: #a7f3d0;
+    }
+    .worm-cell--selected {
+      background: #f59e0b;
+      border-color: #fde68a;
+      box-shadow: 0 0 0 1px rgba(253, 230, 138, 0.95);
+    }
+    .worm-cell--start {
+      box-shadow: 0 0 0 1px var(--seder-color);
+    }
+    .seder-zeraim {
+      --seder-color: #059669;
+      --seder-color-soft: rgba(5, 150, 105, 0.13);
+      --seder-border-color: rgba(5, 150, 105, 0.7);
+    }
+    .seder-moed {
+      --seder-color: #2563eb;
+      --seder-color-soft: rgba(37, 99, 235, 0.13);
+      --seder-border-color: rgba(37, 99, 235, 0.7);
+    }
+    .seder-nashim {
+      --seder-color: #c026d3;
+      --seder-color-soft: rgba(192, 38, 211, 0.13);
+      --seder-border-color: rgba(192, 38, 211, 0.7);
+    }
+    .seder-nezikin {
+      --seder-color: #dc2626;
+      --seder-color-soft: rgba(220, 38, 38, 0.13);
+      --seder-border-color: rgba(220, 38, 38, 0.7);
+    }
+    .seder-kodashim {
+      --seder-color: #ea580c;
+      --seder-color-soft: rgba(234, 88, 12, 0.13);
+      --seder-border-color: rgba(234, 88, 12, 0.7);
+    }
+    .seder-taharot {
+      --seder-color: #0d9488;
+      --seder-color-soft: rgba(13, 148, 136, 0.13);
+      --seder-border-color: rgba(13, 148, 136, 0.7);
+    }
   </style>
 </head>
 <body class="bg-slate-900 text-white min-h-screen font-sans antialiased">
@@ -97,12 +195,12 @@
   const MASECHET_LABEL_SPAN = 5;
 
   const SEDER_COLORS = {
-    'זרעים':  { bg:'bg-emerald-600', hover:'hover:bg-emerald-500', hex:'#059669' },
-    'מועד':   { bg:'bg-blue-600',    hover:'hover:bg-blue-500',    hex:'#2563eb' },
-    'נשים':   { bg:'bg-fuchsia-600', hover:'hover:bg-fuchsia-500', hex:'#c026d3' },
-    'נזיקין': { bg:'bg-red-600',     hover:'hover:bg-red-500',     hex:'#dc2626' },
-    'קדשים':  { bg:'bg-orange-600',  hover:'hover:bg-orange-500',  hex:'#ea580c' },
-    'טהרות':  { bg:'bg-teal-600',    hover:'hover:bg-teal-500',    hex:'#0d9488' },
+    'זרעים':  { bg:'bg-emerald-600', hover:'hover:bg-emerald-500', hex:'#059669', theme:'seder-zeraim' },
+    'מועד':   { bg:'bg-blue-600',    hover:'hover:bg-blue-500',    hex:'#2563eb', theme:'seder-moed' },
+    'נשים':   { bg:'bg-fuchsia-600', hover:'hover:bg-fuchsia-500', hex:'#c026d3', theme:'seder-nashim' },
+    'נזיקין': { bg:'bg-red-600',     hover:'hover:bg-red-500',     hex:'#dc2626', theme:'seder-nezikin' },
+    'קדשים':  { bg:'bg-orange-600',  hover:'hover:bg-orange-500',  hex:'#ea580c', theme:'seder-kodashim' },
+    'טהרות':  { bg:'bg-teal-600',    hover:'hover:bg-teal-500',    hex:'#0d9488', theme:'seder-taharot' },
   };
 
   const COUNTDOWN_TARGET = new Date(2026, 10, 29, 0, 0, 0);
@@ -1028,10 +1126,10 @@
     };
 
     return (
-      <div className="flex flex-col min-h-screen bg-slate-900 animate-fade-in">
+      <div className="flex h-[100dvh] flex-col overflow-hidden bg-slate-900 animate-fade-in">
         {/* Header */}
         <div className="bg-slate-800/95 border-b border-slate-700 z-40 flex-shrink-0">
-          <div className="max-w-full px-4 py-3 flex items-center justify-between">
+          <div className="max-w-full px-3 py-2 sm:px-4 sm:py-3 flex items-center justify-between">
             <button onClick={()=>navigate(returnTo)} className="flex items-center gap-2 text-amber-400 hover:text-amber-300 transition-colors text-sm font-medium">
               <IcBack /> {returnTo==='mypages' ? 'הדפים שלי' : 'ראשי'}
             </button>
@@ -1044,7 +1142,7 @@
               ))}
             </div>
           </div>
-          <div className="px-4 pb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-xs">
+          <div className="px-3 pb-2 sm:px-4 sm:pb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-xs">
             <div className="flex flex-wrap gap-4 text-slate-400">
               <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded inline-block bg-emerald-500" /> נלמד</span>
               <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded inline-block bg-blue-500" /> נתפס</span>
@@ -1056,7 +1154,7 @@
             </div>
           </div>
           {selectionMode && (
-            <div className="px-4 pb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs">
+            <div className="px-3 pb-2 sm:px-4 sm:pb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs">
               <div className="text-amber-200 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2">
                 בחר דף, או בחר דף ראשון ואחרון לטווח.
               </div>
@@ -1071,16 +1169,16 @@
         </div>
 
         {/* Worms container */}
-        <div ref={mapAreaRef} className="flex-1 min-h-0 px-3 pb-3">
-          <div className="h-full rounded-3xl border border-slate-700 bg-slate-800/40 p-2 sm:p-3 overflow-hidden">
+        <div ref={mapAreaRef} className="flex-1 min-h-0 px-2 pb-2 sm:px-3 sm:pb-3">
+          <div className="flex h-full items-center justify-center rounded-3xl border border-slate-700 bg-slate-800/40 p-2 sm:p-3 overflow-hidden">
             <div
-              className="grid mx-auto"
+              className="worm-map-shell"
               style={{
-                width:'fit-content',
-                maxWidth:'100%',
-                gridAutoFlow:'row dense',
+                '--worm-cell-size': `${mapLayout.cell}px`,
+                '--worm-gap': `${mapLayout.gap}px`,
+                '--worm-radius': `${Math.max(2, Math.floor(mapLayout.cell / 3))}px`,
+                '--worm-label-font-size': `${Math.max(7, Math.min(11, mapLayout.cell * 0.9))}px`,
                 gridTemplateColumns:`repeat(${mapLayout.cols}, ${mapLayout.cell}px)`,
-                gap:`${mapLayout.gap}px`,
               }}
             >
               {mapEntries.map(item=>{
@@ -1092,19 +1190,9 @@
                       onClick={()=>setMasechetTarget(item.masechet)}
                       title={`מסכת ${item.masechet}`}
                       aria-label={`מסכת ${item.masechet}`}
-                      className="worm-pixel flex items-center justify-center overflow-hidden border font-bold text-slate-100"
+                      className={`worm-pixel worm-label ${color.theme}`}
                       style={{
-                        height:`${mapLayout.cell}px`,
                         gridColumn:`span ${item.span} / span ${item.span}`,
-                        borderRadius:`${Math.max(2, Math.floor(mapLayout.cell / 3))}px`,
-                        backgroundColor:color.hex,
-                        borderColor:`${color.hex}cc`,
-                        fontSize:`${Math.max(7, Math.min(11, mapLayout.cell * 0.9))}px`,
-                        lineHeight:1,
-                        padding:'0 2px',
-                        overflow:'hidden',
-                        whiteSpace:'nowrap',
-                        textOverflow:'ellipsis',
                       }}
                     >
                       {item.masechet}
@@ -1113,40 +1201,12 @@
                 }
                 const st = getDafStatus(item.masechet, item.daf);
                 const isSelected = selected.has(`${item.masechet}|${item.daf}`);
-                let className = 'worm-pixel border';
-                let style = {
-                  width:`${mapLayout.cell}px`,
-                  height:`${mapLayout.cell}px`,
-                  borderRadius:`${Math.max(2, Math.floor(mapLayout.cell / 3))}px`,
-                  backgroundColor:'rgba(51, 65, 85, 0.9)',
-                  borderColor:'rgba(100, 116, 139, 0.9)',
-                };
-                if (st === 'learned') {
-                  className += ' bg-emerald-500 border-emerald-300';
-                  style = { ...style, backgroundColor:'#10b981', borderColor:'#a7f3d0' };
-                } else if (st === 'assigned') {
-                  className += ' bg-blue-500 border-blue-300';
-                  style = { ...style, backgroundColor:'#3b82f6', borderColor:'#bfdbfe' };
-                } else {
-                  style = {
-                    ...style,
-                    backgroundColor:`${color.hex}22`,
-                    borderColor:`${color.hex}99`,
-                  };
-                }
-                if (isSelected) {
-                  style = {
-                    ...style,
-                    backgroundColor:'#f59e0b',
-                    borderColor:'#fde68a',
-                    boxShadow:'0 0 0 1px rgba(253,230,138,0.95)',
-                  };
-                } else if (item.isStart) {
-                  style = {
-                    ...style,
-                    boxShadow:`0 0 0 1px ${color.hex}`,
-                  };
-                }
+                let className = `worm-pixel worm-cell ${color.theme}`;
+                if (st === 'learned') className += ' worm-cell--learned';
+                else if (st === 'assigned') className += ' worm-cell--assigned';
+                else className += ' worm-cell--free';
+                if (isSelected) className += ' worm-cell--selected';
+                else if (item.isStart) className += ' worm-cell--start';
                 return (
                   <button
                     key={`${item.masechet}|${item.daf}`}
@@ -1154,7 +1214,6 @@
                     title={`${item.masechet} · דף ${formatDaf(item.daf)}${item.isStart ? ' · תחילת מסכת' : ''}`}
                     aria-label={`${item.masechet} דף ${formatDaf(item.daf)}`}
                     className={className}
-                    style={style}
                   />
                 );
               })}
