@@ -224,7 +224,10 @@
   function getMasechetLabelSpan(name) {
     const textLength = [...String(name || '')].length;
     const estimatedWidth = textLength * MASECHET_LABEL_CHAR_PX + 8;
-    return Math.max(MASECHET_LABEL_MIN_SPAN, Math.ceil(estimatedWidth / MAP_CELL_SIZE));
+    return Math.max(
+      MASECHET_LABEL_MIN_SPAN,
+      Math.ceil((estimatedWidth + MAP_GAP) / (MAP_CELL_SIZE + MAP_GAP))
+    );
   }
   function escapeHtml(v) { return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
@@ -1134,9 +1137,6 @@
               style={{
                 '--worm-cell-size': `${MAP_CELL_SIZE}px`,
                 '--worm-gap': `${MAP_GAP}px`,
-                '--worm-radius': '1px',
-                '--worm-border-size': '1px',
-                '--worm-label-font-size': '11px',
                 gridTemplateColumns:`repeat(${MAP_COLS}, ${MAP_CELL_SIZE}px)`,
               }}
             >
