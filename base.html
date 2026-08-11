@@ -146,6 +146,10 @@
     return { ...r, daf_end: r.daf_end ?? r.daf, phone: r.phone||'', learned: Boolean(r.learned), is_full_masechet: Boolean(r.is_full_masechet) };
   }
 
+  function normalizeMyAssignments(records) {
+    return expandAssignments((records || []).map(normalizeRecord));
+  }
+
   function formatIcsDate(d) {
     return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
   }
@@ -698,7 +702,7 @@
       try {
         const res=await fetch('/api/my-assignments',{headers:{'X-User-Phone':p}});
         if (!res.ok) { showToast('אימות נכשל','error'); setLoading(false); return; }
-        const data=(await res.json()).map(normalizeRecord);
+        const data=normalizeMyAssignments(await res.json());
         if (!data.length) { showToast('אינך רשום עדיין','error'); setLoading(false); return; }
         G.myAssignments=data;
         G.verifiedPhone=p;
@@ -1109,7 +1113,7 @@
     const refresh = async (phone) => {
       const res=await fetch('/api/my-assignments',{headers:{'X-User-Phone':phone||verifiedPhone}});
       if (!res.ok) return null;
-      const data=(await res.json()).map(normalizeRecord);
+      const data=normalizeMyAssignments(await res.json());
       G.myAssignments=data;
       setMyData(data);
       return data;
