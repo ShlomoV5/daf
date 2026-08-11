@@ -723,85 +723,68 @@
 
     const handleSuccess = (name, recs) => { setModal(null); setSuccess({name,recs}); };
 
-    // pixel map: 1px per daf
-    const pixels = React.useMemo(()=>{
-      const out=[];
-      MASECHOT_DATA.forEach(mas=>{
-        for (let d=2;d<=mas.dafim+1;d++) {
-          const st=getDafStatus(mas.name,d);
-          out.push(st==='learned'?'#10b981':st==='assigned'?'#3b82f6':'#334155');
-        }
-      });
-      return out;
-    },[assignments.length]);
-
     return (
-      <div className="max-w-2xl mx-auto p-4 space-y-4 animate-fade-in pb-6">
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-3">
-          {[
-            {v:TOTAL_DAFIM.toLocaleString(), l:'סה״כ דפים', cls:'text-amber-400'},
-            {v:(totalAssigned-totalLearned).toLocaleString(), l:'שובצו', cls:'text-blue-400'},
-            {v:totalLearned.toLocaleString(), l:'נלמדו', cls:'text-emerald-400'},
-          ].map(({v,l,cls})=>(
-            <div key={l} className="bg-slate-700/50 rounded-xl p-3 text-center border border-slate-600">
-              <div className={`text-xl font-bold ${cls}`}>{v}</div>
-              <div className="text-xs text-slate-400">{l}</div>
+      <div className="max-w-4xl mx-auto p-4 md:p-6 animate-fade-in pb-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Signup */}
+          <div className="bg-slate-700/50 border border-slate-600 rounded-2xl p-5 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="bg-amber-600/20 text-amber-400 p-2.5 rounded-xl"><IcUser /></div>
+              <h2 className="text-lg font-bold text-white">Signup</h2>
             </div>
-          ))}
-        </div>
+            <p className="text-slate-400 text-sm">בחרו איך להצטרף לסיום הש״ס.</p>
+            <div className="grid grid-cols-3 gap-2">
+              <button onClick={()=>setModal('auto')} className="flex flex-col items-center gap-1.5 bg-purple-600 hover:bg-purple-500 text-white font-semibold py-3 rounded-xl transition-all text-xs">
+                <IcBolt /><span>שבץ אותי</span>
+              </button>
+              <button onClick={()=>setModal('range')} className="flex flex-col items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 rounded-xl transition-all text-xs">
+                <IcRange /><span>שיבוץ טווח</span>
+              </button>
+              <button onClick={()=>navigate('shasmap')} className="flex flex-col items-center gap-1.5 bg-slate-600 hover:bg-slate-500 text-white font-semibold py-3 rounded-xl transition-all text-xs">
+                <IcMap /><span>תן לי לבחור</span>
+              </button>
+            </div>
+          </div>
 
-        {/* Signup / Assign card */}
-        <div className="bg-slate-700/50 border border-slate-600 rounded-2xl p-5 space-y-3">
-          <h2 className="text-lg font-bold text-amber-400">הצטרפות לסיום הש״ס</h2>
-          <p className="text-slate-400 text-sm">בחרו כיצד תרצו להצטרף:</p>
-          <div className="grid grid-cols-3 gap-2">
-            <button onClick={()=>setModal('auto')} className="flex flex-col items-center gap-1.5 bg-purple-600 hover:bg-purple-500 text-white font-semibold py-3 rounded-xl transition-all text-xs">
-              <IcBolt /><span>שבץ אותי</span>
-            </button>
-            <button onClick={()=>setModal('range')} className="flex flex-col items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 rounded-xl transition-all text-xs">
-              <IcRange /><span>שיבוץ טווח</span>
-            </button>
-            <button onClick={()=>navigate('shasmap')} className="flex flex-col items-center gap-1.5 bg-slate-600 hover:bg-slate-500 text-white font-semibold py-3 rounded-xl transition-all text-xs">
-              <IcMap /><span>תן לי לבחור</span>
-            </button>
-          </div>
-        </div>
+          {/* My Pages */}
+          <button onClick={()=>navigate('mypages')} className="text-right bg-slate-700/50 border border-slate-600 hover:border-slate-400 rounded-2xl p-5 transition-all space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="bg-slate-600/60 text-slate-200 p-2.5 rounded-xl"><IcBook /></div>
+              <h2 className="text-lg font-bold text-white">My pages</h2>
+            </div>
+            <p className="text-slate-400 text-sm">צפייה וניהול הדפים האישיים שלכם.</p>
+          </button>
 
-        {/* Shas Map card */}
-        <div onClick={()=>navigate('shasmap')} className="cursor-pointer bg-slate-700/50 border border-slate-600 rounded-2xl p-5 space-y-3 hover:border-amber-500/50 transition-all group">
-          <div className="flex justify-between items-center">
-            <h2 className="text-lg font-bold text-white">מפת הש״ס</h2>
-            <span className="text-xs text-amber-400 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">לצפייה במפה המלאה <IcBack /></span>
-          </div>
-          {/* Progress */}
-          <div className="space-y-1">
-            <div className="flex justify-between text-xs text-slate-400">
-              <span>התקדמות כללית</span>
-              <span className="text-amber-400 font-semibold">{Math.round(pctLearned)}%</span>
+          {/* Statistics */}
+          <button onClick={()=>navigate('shasmap')} className="text-right bg-slate-700/50 border border-slate-600 hover:border-amber-500/50 rounded-2xl p-5 transition-all space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-white">Statistics</h2>
+              <span className="text-xs text-amber-400 flex items-center gap-1">למפה <IcBack /></span>
             </div>
-            <div className="h-3 bg-slate-600 rounded-full overflow-hidden flex">
-              <div className="h-full bg-emerald-500 transition-all duration-700" style={{width:`${pctLearned}%`}} />
-              <div className="h-full bg-blue-500 transition-all duration-700" style={{width:`${pctAssigned}%`}} />
+            <div className="grid grid-cols-3 gap-2 text-center">
+              {[
+                {v:TOTAL_DAFIM.toLocaleString(), l:'סה״כ', cls:'text-amber-400'},
+                {v:(totalAssigned-totalLearned).toLocaleString(), l:'שובצו', cls:'text-blue-400'},
+                {v:totalLearned.toLocaleString(), l:'נלמדו', cls:'text-emerald-400'},
+              ].map(({v,l,cls})=>(
+                <div key={l} className="bg-slate-800/60 border border-slate-600 rounded-xl py-2">
+                  <div className={`text-base font-bold ${cls}`}>{v}</div>
+                  <div className="text-[11px] text-slate-400">{l}</div>
+                </div>
+              ))}
             </div>
-            <div className="flex gap-3 text-xs text-slate-400">
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-emerald-500 inline-block" /> נלמדו</span>
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-blue-500 inline-block" /> שובצו</span>
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-slate-600 inline-block" /> פנוי</span>
+            <div className="space-y-1">
+              <div className="flex justify-between text-xs text-slate-400">
+                <span>התקדמות כללית</span>
+                <span className="text-amber-400 font-semibold">{Math.round(pctLearned)}%</span>
+              </div>
+              <div className="h-3 bg-slate-600 rounded-full overflow-hidden flex">
+                <div className="h-full bg-emerald-500 transition-all duration-700" style={{width:`${pctLearned}%`}} />
+                <div className="h-full bg-blue-500 transition-all duration-700" style={{width:`${pctAssigned}%`}} />
+              </div>
             </div>
-          </div>
-          {/* Pixel map */}
-          <div className="flex flex-wrap gap-px justify-center py-1" style={{lineHeight:0}}>
-            {pixels.map((color,i)=>(
-              <div key={i} style={{width:3,height:3,backgroundColor:color,borderRadius:1,display:'inline-block'}} />
-            ))}
-          </div>
+          </button>
         </div>
-
-        {/* My Pages button */}
-        <button onClick={()=>navigate('mypages')} className="w-full flex items-center justify-center gap-2 bg-slate-700/50 border border-slate-600 hover:border-slate-400 text-white font-semibold py-4 rounded-2xl transition-all text-sm">
-          <IcBook /><span>הדפים שלי</span>
-        </button>
 
         {/* Modals */}
         {modal==='auto' && <AutoAssignModal
