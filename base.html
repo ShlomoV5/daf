@@ -40,7 +40,9 @@
     @keyframes toastIn { from { transform: translateY(-12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
     .modal-bg { background: rgba(0,0,0,0.6); backdrop-filter: blur(3px); }
     /* worm transition */
-    .worm { transition: width 0.4s cubic-bezier(.4,0,.2,1), border-radius 0.4s ease, opacity 0.2s ease; }
+    .worm-frame { box-shadow: 0 12px 30px rgba(15, 23, 42, 0.28); }
+    .worm-pixel { transition: transform 0.15s ease, opacity 0.15s ease; }
+    .worm-pixel:hover { transform: translateY(-1px); }
   </style>
 </head>
 <body class="bg-slate-900 text-white min-h-screen font-sans antialiased">
@@ -169,6 +171,7 @@
     assignmentRanges: [],  // raw ranges from server
     myAssignments: [],
     verifiedPhone: '',
+    signupDraft: null,
     config: {...defaultConfig},
     onDataChanged: null,   // callback set by React root
   };
@@ -302,7 +305,7 @@
   const Modal = ({ onClose, children, wide=false }) => (
     <div className="modal-bg fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div
-        className={`bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl w-full ${wide?'max-w-lg':'max-w-sm'} max-h-[85vh] overflow-auto`}
+        className={`bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl w-full ${wide?'max-w-lg':'max-w-sm'} max-h-[85vh] overflow-auto animate-fade-in`}
         onClick={e=>e.stopPropagation()}
       >
         {children}
@@ -358,11 +361,61 @@
     );
   };
 
+  const SignupEntryModal = ({ onClose, onContinue }) => {
+    const draft = G.signupDraft || {};
+    const [name,setName]=React.useState(draft.name || '');
+    const [phone,setPhone]=React.useState(draft.phone || '');
+    const [dedication,setDedication]=React.useState(draft.dedication || '');
+
+    const submit = mode => {
+      const normalized = normalizePhone(phone);
+      if (!name.trim()) { showToast('אנא הזן שם','error'); return; }
+      if (!isValidPhone(normalized)) { showToast('אנא הזן מספר טלפון תקין','error'); return; }
+      const identity = { name:name.trim(), phone:normalized, dedication:dedication.trim() };
+      G.signupDraft = identity;
+      onContinue(mode, identity);
+    };
+
+    return (
+      <Modal onClose={onClose} wide>
+        <div className="p-6 space-y-4">
+          <div className="space-y-1 text-right">
+            <h3 className="text-xl font-bold text-amber-400">הרשמה למיזם</h3>
+            <p className="text-slate-300 text-sm">מלאו פרטים ואז בחרו איך להצטרף לסיום הש״ס.</p>
+          </div>
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1">שם *</label>
+              <input type="text" value={name} onChange={e=>setName(e.target.value)} className="w-full bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-white text-sm focus:border-amber-500 focus:outline-none" autoFocus />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1">טלפון *</label>
+              <input type="tel" inputMode="numeric" value={phone} onChange={e=>setPhone(e.target.value)} placeholder="05XXXXXXXX" className="w-full bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-white text-sm focus:border-amber-500 focus:outline-none" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1">הקדשה / הערה</label>
+              <textarea value={dedication} onChange={e=>setDedication(e.target.value)} rows={2} placeholder="לעילוי נשמת / לרפואה שלמה..." className="w-full bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-white text-sm focus:border-amber-500 focus:outline-none resize-none" />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+            <button onClick={()=>submit('auto')} className="w-full bg-purple-600 hover:bg-purple-500 text-white font-semibold py-3 rounded-xl transition-all text-sm">
+              הצע לי דפים
+            </button>
+            <button onClick={()=>submit('range')} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 rounded-xl transition-all text-sm">
+              תן לי לבחור דפים
+            </button>
+          </div>
+        </div>
+      </Modal>
+    );
+  };
+
   // ─── ASSIGN FORM (single daf) ─────────────────────────────────────────────────
   const AssignDafModal = ({ masechet, daf, onClose, onSuccess }) => {
-    const [name,setName]=React.useState('');
-    const [phone,setPhone]=React.useState('');
-    const [dedication,setDedication]=React.useState('');
+    const draft = G.signupDraft || {};
+    const [name,setName]=React.useState(draft.name || '');
+    const [phone,setPhone]=React.useState(draft.phone || '');
+    const [dedication,setDedication]=React.useState(draft.dedication || '');
     const [loading,setLoading]=React.useState(false);
 
     const submit = async e => {
@@ -373,7 +426,7 @@
       setLoading(true);
       const result = await window.dataSdk.create({ masechet, daf, daf_end:daf, name:name.trim(), phone:p, dedication:dedication.trim(), learned:false, is_full_masechet:false });
       setLoading(false);
-      if (result.isOk) { onSuccess(name.trim(),[{masechet,daf,daf_end:daf}]); }
+      if (result.isOk) { G.signupDraft = { name:name.trim(), phone:p, dedication:dedication.trim() }; onSuccess(name.trim(),[{masechet,daf,daf_end:daf}]); }
       else { showToast('שגיאה בשיבוץ','error'); }
     };
 
@@ -405,10 +458,11 @@
 
   // ─── AUTO ASSIGN MODAL ────────────────────────────────────────────────────────
   const AutoAssignModal = ({ onClose, onSuccess }) => {
+    const draft = G.signupDraft || {};
     const [mode,setMode]=React.useState(null); // 'masechet' | 'pages'
-    const [name,setName]=React.useState('');
-    const [phone,setPhone]=React.useState('');
-    const [dedication,setDedication]=React.useState('');
+    const [name,setName]=React.useState(draft.name || '');
+    const [phone,setPhone]=React.useState(draft.phone || '');
+    const [dedication,setDedication]=React.useState(draft.dedication || '');
     const [count,setCount]=React.useState(1);
     const takenMasechot = new Set(G.assignmentRanges.filter(a=>a.is_full_masechet).map(a=>a.masechet));
     const firstFree = MASECHOT_DATA.find(m=>!takenMasechot.has(m.name))?.name || MASECHOT_DATA[0].name;
@@ -420,7 +474,9 @@
       const p=normalizePhone(phone);
       if (!name.trim()) { showToast('אנא הזן שם','error'); return null; }
       if (!isValidPhone(p)) { showToast('אנא הזן מספר טלפון תקין','error'); return null; }
-      return { name:name.trim(), phone:p, dedication:dedication.trim() };
+      const identity = { name:name.trim(), phone:p, dedication:dedication.trim() };
+      G.signupDraft = identity;
+      return identity;
     };
 
     const handleMasechet = e => {
@@ -477,7 +533,7 @@
     if (!mode) return (
       <Modal onClose={onClose}>
         <div className="p-5 space-y-3">
-          <h3 className="text-lg font-bold text-amber-400">שבץ אותי</h3>
+          <h3 className="text-lg font-bold text-amber-400">הצע לי דפים</h3>
           <button onClick={()=>setMode('masechet')} className="w-full bg-purple-600 hover:bg-purple-500 text-white font-semibold py-3 rounded-xl transition-all text-sm">🏆 מסכת שלימה</button>
           <button onClick={()=>setMode('pages')} className="w-full bg-purple-600 hover:bg-purple-500 text-white font-semibold py-3 rounded-xl transition-all text-sm">📄 מספר דפים</button>
           <button onClick={onClose} className="w-full bg-slate-600 hover:bg-slate-500 text-white font-semibold py-2 rounded-xl transition-all text-sm">ביטול</button>
@@ -545,10 +601,11 @@
 
   // ─── RANGE ASSIGN MODAL ───────────────────────────────────────────────────────
   const RangeAssignModal = ({ onClose, onSuccess, assignments }) => {
+    const draft = G.signupDraft || {};
     const [masechet,setMasechet]=React.useState(MASECHOT_DATA[0].name);
-    const [name,setName]=React.useState('');
-    const [phone,setPhone]=React.useState('');
-    const [dedication,setDedication]=React.useState('');
+    const [name,setName]=React.useState(draft.name || '');
+    const [phone,setPhone]=React.useState(draft.phone || '');
+    const [dedication,setDedication]=React.useState(draft.dedication || '');
     const [fromDaf,setFromDaf]=React.useState(null);
     const [toDaf,setToDaf]=React.useState(null);
     const [pending,setPending]=React.useState(null);
@@ -568,6 +625,7 @@
       const toAssign=freeDafim.filter(d=>d>=s&&d<=en);
       if (!toAssign.length) { showToast('אין דפים פנויים בטווח זה','error'); return; }
       const id={name:name.trim(),phone:p,dedication:dedication.trim()};
+      G.signupDraft = id;
       const records=buildDafRanges(toAssign).map(r=>({masechet,daf:r.start,daf_end:r.end,name:id.name,phone:id.phone,dedication:id.dedication,learned:false,is_full_masechet:false}));
       setPending({ identity:id, records });
     };
@@ -596,7 +654,7 @@
     return (
       <Modal onClose={onClose}>
         <div className="p-5 space-y-3">
-          <h3 className="text-lg font-bold text-amber-400">שיבוץ טווח דפים</h3>
+          <h3 className="text-lg font-bold text-amber-400">תן לי לבחור דפים</h3>
           <form onSubmit={handleSubmit} className="space-y-3">
             <div>
               <label className="block text-xs font-medium text-slate-300 mb-1">שם *</label>
@@ -715,7 +773,7 @@
 
   // ─── DASHBOARD ────────────────────────────────────────────────────────────────
   const Dashboard = ({ navigate, assignments, totalAssigned, totalLearned }) => {
-    const [modal,setModal]=React.useState(null); // 'auto'|'range'
+    const [modal,setModal]=React.useState(null); // 'signup'|'auto'|'range'
     const [success,setSuccess]=React.useState(null);
 
     const pctLearned = totalLearned/TOTAL_DAFIM*100;
@@ -727,38 +785,27 @@
       <div className="max-w-4xl mx-auto p-4 md:p-6 animate-fade-in pb-6">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {/* Signup */}
-          <div className="bg-slate-700/50 border border-slate-600 rounded-2xl p-5 space-y-4">
+          <button onClick={()=>setModal('signup')} className="text-right bg-slate-700/50 border border-slate-600 hover:border-amber-500/60 rounded-2xl p-5 transition-all space-y-4">
             <div className="flex items-center gap-3">
               <div className="bg-amber-600/20 text-amber-400 p-2.5 rounded-xl"><IcUser /></div>
-              <h2 className="text-lg font-bold text-white">Signup</h2>
+              <h2 className="text-lg font-bold text-white">הרשמה למיזם</h2>
             </div>
-            <p className="text-slate-400 text-sm">בחרו איך להצטרף לסיום הש״ס.</p>
-            <div className="grid grid-cols-3 gap-2">
-              <button onClick={()=>setModal('auto')} className="flex flex-col items-center gap-1.5 bg-purple-600 hover:bg-purple-500 text-white font-semibold py-3 rounded-xl transition-all text-xs">
-                <IcBolt /><span>שבץ אותי</span>
-              </button>
-              <button onClick={()=>setModal('range')} className="flex flex-col items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 rounded-xl transition-all text-xs">
-                <IcRange /><span>שיבוץ טווח</span>
-              </button>
-              <button onClick={()=>navigate('shasmap')} className="flex flex-col items-center gap-1.5 bg-slate-600 hover:bg-slate-500 text-white font-semibold py-3 rounded-xl transition-all text-xs">
-                <IcMap /><span>תן לי לבחור</span>
-              </button>
-            </div>
-          </div>
+            <p className="text-slate-400 text-sm">הצטרף לסיום הש״ס</p>
+          </button>
 
           {/* My Pages */}
           <button onClick={()=>navigate('mypages')} className="text-right bg-slate-700/50 border border-slate-600 hover:border-slate-400 rounded-2xl p-5 transition-all space-y-4">
             <div className="flex items-center gap-3">
               <div className="bg-slate-600/60 text-slate-200 p-2.5 rounded-xl"><IcBook /></div>
-              <h2 className="text-lg font-bold text-white">My pages</h2>
+              <h2 className="text-lg font-bold text-white">הדפים שלי</h2>
             </div>
-            <p className="text-slate-400 text-sm">צפייה וניהול הדפים האישיים שלכם.</p>
+            <p className="text-slate-400 text-sm">מעקב ודיווח על לימוד או הוספה של דפים חדשים</p>
           </button>
 
           {/* Statistics */}
           <button onClick={()=>navigate('shasmap')} className="text-right bg-slate-700/50 border border-slate-600 hover:border-amber-500/50 rounded-2xl p-5 transition-all space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-white">Statistics</h2>
+              <h2 className="text-lg font-bold text-white">מפת הש״ס</h2>
               <span className="text-xs text-amber-400 flex items-center gap-1">למפה <IcBack /></span>
             </div>
             <div className="grid grid-cols-3 gap-2 text-center">
@@ -787,6 +834,10 @@
         </div>
 
         {/* Modals */}
+        {modal==='signup' && <SignupEntryModal
+          onClose={()=>setModal(null)}
+          onContinue={(nextMode)=>setModal(nextMode)}
+        />}
         {modal==='auto' && <AutoAssignModal
           onClose={()=>setModal(null)}
           onSuccess={handleSuccess}
@@ -803,7 +854,6 @@
 
   // ─── SHAS MAP VIEW ────────────────────────────────────────────────────────────
   const ShasMapView = ({ navigate, assignments }) => {
-    const [expanded,setExpanded]=React.useState(null);
     const [assignTarget,setAssignTarget]=React.useState(null); // {masechet,daf}
     const [viewTarget,setViewTarget]=React.useState(null); // {masechet,daf,assignment}
     const [success,setSuccess]=React.useState(null);
@@ -839,67 +889,36 @@
         </div>
 
         {/* Worms container */}
-        <div className="flex-1 overflow-x-auto overflow-y-hidden hide-scrollbar px-2 py-3">
-          <div className="flex gap-1 h-full items-stretch" style={{minWidth:'max-content'}}>
+        <div className="flex-1 overflow-x-auto overflow-y-hidden hide-scrollbar px-3 py-4">
+          <div className="flex gap-4 items-start h-full" style={{minWidth:'max-content'}}>
             {MASECHOT_DATA.map(mas=>{
-              const isExp = expanded===mas.name;
               const color = SEDER_COLORS[mas.seder];
-              // height proportional to dafim count relative to largest masechet
-              const heightPct = (mas.dafim / MAX_DAFIM) * 100;
 
               return (
-                <div
-                  key={mas.name}
-                  className="flex items-end justify-center h-full"
-                  style={{flexShrink:0}}
-                >
-                  <div
-                    onClick={()=>setExpanded(isExp?null:mas.name)}
-                    className={`worm relative flex flex-col cursor-pointer select-none border border-white/10 shadow-lg
-                      ${color.bg} ${isExp?'rounded-2xl':'rounded-full'}`}
-                    style={{
-                      width: isExp ? 220 : 18,
-                      height: `${heightPct}%`,
-                      minHeight: isExp ? 120 : 28,
-                      overflow: isExp ? 'hidden' : 'visible',
-                    }}
-                  >
-                    {/* Collapsed: vertical name */}
-                    {!isExp && (
-                      <div
-                        className="absolute inset-0 flex items-center justify-center"
-                        style={{writingMode:'vertical-rl', transform:'rotate(180deg)', fontSize:10, fontWeight:700, color:'rgba(255,255,255,0.9)', letterSpacing:'0.12em', whiteSpace:'nowrap'}}
-                      >
-                        {mas.name}
-                      </div>
-                    )}
-
-                    {/* Expanded content */}
-                    {isExp && (
-                      <div className="flex flex-col h-full p-3 animate-fade-in overflow-hidden">
-                        <div className="flex justify-between items-baseline mb-2 flex-shrink-0">
-                          <span className="font-black text-white text-sm">{mas.name}</span>
-                          <span className="text-[10px] text-white/80 bg-white/20 px-1.5 py-0.5 rounded-full">{mas.dafim}</span>
-                        </div>
-                        <div className="flex-1 overflow-y-auto" style={{scrollbarWidth:'thin',scrollbarColor:'rgba(255,255,255,0.3) transparent'}}>
-                          <div className="flex flex-wrap gap-1 pb-2">
-                            {Array.from({length:mas.dafim},(_, i)=>i+2).map(d=>{
-                              const st=getDafStatus(mas.name,d);
-                              let cls='';
-                              if (st==='learned') cls='bg-white text-slate-800 shadow-sm';
-                              else if (st==='assigned') cls='bg-slate-900/50 text-white/80 border border-transparent';
-                              else cls='bg-white/10 text-white/70 border border-white/20 hover:bg-white/25';
-                              return (
-                                <div key={d} onClick={e=>{e.stopPropagation();handleDafClick(mas.name,d);}}
-                                  title={`${mas.name} ${formatDaf(d)}`}
-                                  className={`w-7 h-7 text-[10px] flex items-center justify-center rounded-md font-bold cursor-pointer transition-colors ${cls}`}
-                                >{formatDaf(d)}</div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </div>
-                    )}
+                <div key={mas.name} className="flex flex-col gap-2 flex-shrink-0">
+                  <div className="flex items-center justify-between px-2 text-xs">
+                    <span className="font-bold text-white whitespace-nowrap">{mas.name}</span>
+                    <span className="text-slate-400">{mas.dafim}</span>
+                  </div>
+                  <div className="worm-frame rounded-full border-2 bg-slate-800/90 px-2 py-2" style={{borderColor:color.hex}}>
+                    <div className="flex items-center gap-1">
+                      {Array.from({length:mas.dafim},(_, i)=>i+2).map(d=>{
+                        const st=getDafStatus(mas.name,d);
+                        let cls='bg-slate-700 border border-slate-500 text-slate-400';
+                        if (st==='learned') cls='bg-emerald-500 border border-emerald-400 text-white';
+                        else if (st==='assigned') cls='bg-blue-500 border border-blue-400 text-white';
+                        return (
+                          <button
+                            key={d}
+                            onClick={()=>handleDafClick(mas.name,d)}
+                            title={`${mas.name} דף ${formatDaf(d)}`}
+                            className={`worm-pixel w-4 h-4 rounded-[4px] flex items-center justify-center text-[8px] font-bold shrink-0 ${cls}`}
+                          >
+                            {formatDaf(d)}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               );
@@ -1035,17 +1054,20 @@
       <div className="max-w-2xl mx-auto p-4 animate-fade-in pb-32">
         {showVerify && <PhoneVerifyModal onVerified={onVerified} onClose={()=>navigate('home')} />}
 
-        <div className="flex justify-between items-center mb-4">
-          <button onClick={()=>navigate('home')} className="flex items-center gap-2 text-amber-400 hover:text-amber-300 transition-colors text-sm">
+        <div className="flex justify-between items-start mb-6 gap-4">
+          <button onClick={()=>navigate('home')} className="flex items-center gap-2 text-amber-400 hover:text-amber-300 transition-colors text-sm pt-1">
             <IcBack /> ראשי
           </button>
-          <h2 className="text-xl font-bold text-white">הדפים שלי</h2>
+          <div className="text-center flex-1">
+            <h2 className="text-2xl font-bold text-white">הדפים שלי</h2>
+            <p className="text-slate-400 text-sm mt-1">מעקב ודיווח על לימוד או הוספה של דפים חדשים</p>
+          </div>
           <div className="flex gap-2">
             <button onClick={()=>navigate('shasmap')} className="bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold px-3 py-1.5 rounded-xl transition-all">+ הוספת דפים</button>
             {!showVerify && myData.length>0 && (
               <button onClick={()=>{setEditMode(!editMode);setSelected(new Set());setRangeStart(null);}}
                 className={`flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-xl border transition-all ${editMode?'bg-amber-600 border-amber-500 text-white':'bg-slate-700 border-slate-600 text-slate-300 hover:text-white'}`}>
-                <IcEdit />{editMode?'סיום עריכה':'עריכה'}
+                <IcEdit />{editMode?'סיום עריכה':'עריכת דפים'}
               </button>
             )}
           </div>
