@@ -967,6 +967,8 @@
     const [loading,setLoading]=React.useState(false);
     const mapAreaRef = React.useRef(null);
     const [mapLayout,setMapLayout]=React.useState({ cell:6, cols:60, gap:1 });
+    const MAP_VIEWPORT_BUDGET_FRACTION = 0.98; // keep a small safety margin so the map never clips
+    const MAP_MAX_CELL_FRACTION = 0.0125; // keep cells at ~1.25% of available min dimension or smaller
     const signupIdentity = G.signupDraft;
     const mapEntries = React.useMemo(
       () => MASECHOT_DATA.flatMap(mas => [
@@ -1016,23 +1018,40 @@
       const updateLayout = () => {
         const el = mapAreaRef.current;
         if (!el) return;
-        const width = el.clientWidth;
-        const height = el.clientHeight;
+        const computed = window.getComputedStyle(el);
+        const padX = (parseFloat(computed.paddingLeft) || 0) + (parseFloat(computed.paddingRight) || 0);
+        const padY = (parseFloat(computed.paddingTop) || 0) + (parseFloat(computed.paddingBottom) || 0);
+        const width = Math.max(0, el.clientWidth - padX);
+        const height = Math.max(0, el.clientHeight - padY);
         if (!width || !height) return;
         const gap = 1;
-        let best = { cell:2, cols:Math.max(MASECHET_LABEL_SPAN, Math.min(totalMapUnits, Math.floor(width / 3))), gap };
-        const maxCols = Math.max(MASECHET_LABEL_SPAN, Math.min(totalMapUnits, width));
+        const availableWidth = width * MAP_VIEWPORT_BUDGET_FRACTION;
+        const availableHeight = height * MAP_VIEWPORT_BUDGET_FRACTION;
+        const maxCellByBudget = Math.max(
+          2,
+          Math.floor(Math.min(availableWidth, availableHeight) * MAP_MAX_CELL_FRACTION)
+        );
+        let best = null;
+        const maxCols = Math.max(MASECHET_LABEL_SPAN, Math.min(totalMapUnits, Math.floor(availableWidth)));
         for (let cols = MASECHET_LABEL_SPAN; cols <= maxCols; cols += 1) {
           const rows = estimateRows(cols);
           const cell = Math.floor(
             Math.min(
-              (width - gap * Math.max(0, cols - 1)) / cols,
-              (height - gap * Math.max(0, rows - 1)) / rows
+              (availableWidth - gap * Math.max(0, cols - 1)) / cols,
+              (availableHeight - gap * Math.max(0, rows - 1)) / rows
             )
           );
-          if (cell > best.cell) {
+          if (cell < 2 || cell > maxCellByBudget) continue;
+          if (!best || cell > best.cell) {
             best = { cell, cols, gap };
           }
+        }
+        if (!best) {
+          best = {
+            cell:2,
+            cols:Math.max(MASECHET_LABEL_SPAN, Math.min(totalMapUnits, Math.floor(availableWidth / 3))),
+            gap,
+          };
         }
         setMapLayout(current =>
           current.cell === best.cell && current.cols === best.cols
