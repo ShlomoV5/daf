@@ -41,76 +41,90 @@
     .toast-enter { animation: toastIn 0.3s ease; }
     @keyframes toastIn { from { transform: translateY(-12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
     .modal-bg { background: rgba(0,0,0,0.6); backdrop-filter: blur(3px); }
-    /* worm transition */
-    .worm-frame { box-shadow: 0 12px 30px rgba(15, 23, 42, 0.28); }
-    .worm-pixel { transition: transform 0.15s ease, opacity 0.15s ease; }
-    .worm-pixel:hover { transform: translateY(-1px); }
-    .worm-map-shell {
-      --worm-cell-size: 4px;
-      --worm-gap: 1px;
-      --worm-radius: 2px;
-      --worm-label-font-size: 11px;
-      --worm-border-size: 1px;
+    .compact-map-grid {
       display: grid;
-      width: fit-content;
-      grid-auto-flow: row dense;
-      gap: var(--worm-gap);
-      margin-inline: auto;
-      align-content: center;
-      justify-content: center;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 12px;
+      align-items: start;
     }
-    .worm-label,
-    .worm-cell {
+    .tractate-card {
       --seder-color: #64748b;
       --seder-color-soft: rgba(100, 116, 139, 0.18);
       --seder-border-color: rgba(148, 163, 184, 0.85);
-      box-sizing: border-box;
-      border-style: solid;
-      border-width: var(--worm-border-size);
-      border-radius: var(--worm-radius);
+      text-align: right;
+      border: 1.5px solid var(--seder-color);
+      background:
+        linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(15, 23, 42, 0.84)),
+        radial-gradient(circle at top right, var(--seder-color-soft), transparent 62%);
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.26);
+      transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
     }
-    .worm-label {
-      min-width: 0;
-      min-height: 16px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
-      padding: 2px 4px;
-      font-weight: 700;
-      font-size: var(--worm-label-font-size);
-      line-height: 1;
-      color: rgb(248 250 252);
-      white-space: nowrap;
-      text-overflow: ellipsis;
-      background: var(--seder-color);
+    .tractate-card:hover {
+      transform: translateY(-2px);
       border-color: var(--seder-color);
+      box-shadow: 0 16px 34px rgba(15, 23, 42, 0.34);
     }
-    .worm-cell {
-      width: var(--worm-cell-size);
-      height: var(--worm-cell-size);
-      background: rgba(51, 65, 85, 0.9);
-      border-color: rgba(100, 116, 139, 0.9);
+    .tractate-card:focus-visible {
+      outline: 2px solid rgba(255,255,255,0.75);
+      outline-offset: 2px;
     }
-    .worm-cell.worm-cell--free {
+    .tractate-preview {
+      display: grid;
+      gap: 3px;
+      direction: ltr;
+    }
+    .tractate-preview-cell,
+    .tractate-daf-cell {
+      --seder-color: #64748b;
+      --seder-color-soft: rgba(100, 116, 139, 0.18);
+      --seder-border-color: rgba(148, 163, 184, 0.85);
+      border: 1px solid transparent;
+      transition: transform 0.14s ease, box-shadow 0.14s ease, border-color 0.14s ease;
+    }
+    .tractate-preview-cell {
+      aspect-ratio: 1;
+      min-width: 0;
+      border-radius: 4px;
+    }
+    .tractate-daf-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(44px, 1fr));
+      gap: 8px;
+      direction: ltr;
+    }
+    .tractate-daf-cell {
+      min-height: 44px;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: 13px;
+    }
+    .tractate-daf-cell:hover:not(:disabled),
+    .tractate-preview-cell:hover:not(:disabled) {
+      transform: translateY(-1px);
+    }
+    .daf-state-free {
       background: var(--seder-color-soft);
       border-color: var(--seder-border-color);
+      color: rgb(226 232 240);
     }
-    .worm-cell.worm-cell--assigned {
-      background: #3b82f6;
+    .daf-state-assigned {
+      background: rgba(37, 99, 235, 0.88);
       border-color: #bfdbfe;
+      color: white;
     }
-    .worm-cell.worm-cell--learned {
-      background: #10b981;
+    .daf-state-learned {
+      background: rgba(16, 185, 129, 0.9);
       border-color: #a7f3d0;
+      color: white;
     }
-    .worm-cell.worm-cell--selected {
-      background: #f59e0b;
+    .daf-state-selected {
+      background: rgba(245, 158, 11, 0.96);
       border-color: #fde68a;
-      box-shadow: 0 0 0 1px rgba(253, 230, 138, 0.95);
+      color: white;
+      box-shadow: 0 0 0 1px rgba(253, 230, 138, 0.98);
     }
-    .worm-cell.worm-cell--start {
-      box-shadow: 0 0 0 1px var(--seder-color);
+    .daf-state-range-start {
+      box-shadow: 0 0 0 2px var(--seder-color);
     }
     .seder-zeraim {
       --seder-color: #059669;
@@ -192,12 +206,6 @@
     { seder:"טהרות",  name:"נדה",         dafim:73  },
   ];
   const TOTAL_DAFIM = 2711;
-  const MAX_DAFIM = Math.max(...MASECHOT_DATA.map(m => m.dafim));
-  const MAP_CELL_SIZE = 4;
-  const MAP_GAP = 1;
-  const MAP_COLS = 120;
-  const MASECHET_LABEL_MIN_SPAN = 8;
-  const MASECHET_LABEL_CHAR_PX = 7;
 
   const SEDER_COLORS = {
     'זרעים':  { bg:'bg-emerald-600', hover:'hover:bg-emerald-500', hex:'#059669', theme:'seder-zeraim' },
@@ -221,14 +229,6 @@
 
   function normalizePhone(v) { return String(v||'').replace(/\D/g,''); }
   function isValidPhone(p) { return /^\d{9,15}$/.test(p); }
-  function getMasechetLabelSpan(name) {
-    const textLength = [...String(name || '')].length;
-    const estimatedWidth = textLength * MASECHET_LABEL_CHAR_PX + 8;
-    return Math.max(
-      MASECHET_LABEL_MIN_SPAN,
-      Math.ceil((estimatedWidth + MAP_GAP) / (MAP_CELL_SIZE + MAP_GAP))
-    );
-  }
   function escapeHtml(v) { return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
   function buildDafRanges(nums) {
@@ -966,6 +966,119 @@
     );
   };
 
+  const TractateCard = ({ mas, selected, onOpen }) => {
+    const color = SEDER_COLORS[mas.seder] || FALLBACK_SEDER_COLOR;
+    const previewColumns = mas.dafim >= 140 ? 16 : mas.dafim >= 90 ? 14 : 12;
+    return (
+      <button
+        type="button"
+        onClick={onOpen}
+        className={`tractate-card ${color.theme} rounded-2xl p-3 sm:p-4 space-y-3`}
+        title={`פתח מסכת ${mas.name}`}
+        aria-label={`פתח מסכת ${mas.name}`}
+      >
+        <div className="text-sm sm:text-base font-bold text-white truncate">{mas.name}</div>
+        <div
+          className="tractate-preview"
+          style={{ gridTemplateColumns:`repeat(${previewColumns}, minmax(0, 1fr))` }}
+          aria-hidden="true"
+        >
+          {Array.from({ length:mas.dafim }, (_, i) => {
+            const daf = i + 2;
+            const st = getDafStatus(mas.name, daf);
+            const isSelected = selected.has(`${mas.name}|${daf}`);
+            let className = `tractate-preview-cell ${color.theme} `;
+            if (isSelected) className += 'daf-state-selected';
+            else if (st === 'learned') className += 'daf-state-learned';
+            else if (st === 'assigned') className += 'daf-state-assigned';
+            else className += 'daf-state-free';
+            return <span key={daf} className={className} />;
+          })}
+        </div>
+      </button>
+    );
+  };
+
+  const MasechetDetailModal = ({
+    masechet,
+    selectionMode,
+    selected,
+    rangeStart,
+    onDafClick,
+    onClose,
+    onClearSelection,
+  }) => {
+    const stats = getMasechetStats(masechet);
+    const mas = stats.mas;
+    const color = SEDER_COLORS[mas?.seder] || FALLBACK_SEDER_COLOR;
+    const selectedCount = [...selected].filter(id=>id.startsWith(`${masechet}|`)).length;
+    return (
+      <Modal onClose={onClose} wide>
+        <div className="p-5 sm:p-6 space-y-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-xl font-bold text-white">{masechet}</h3>
+                <span className={`px-2 py-1 rounded-full text-[11px] font-semibold text-white ${color.bg}`}>{mas?.seder}</span>
+              </div>
+              <p className="text-sm text-slate-300">{mas?.dafim} דפים במסכת</p>
+            </div>
+            <button onClick={onClose} className="text-sm text-slate-400 hover:text-white transition-colors">סגור</button>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2 text-center text-xs">
+            <div className="bg-slate-700/60 rounded-xl py-2"><div className="text-white font-bold">{stats.assigned}</div><div className="text-slate-400">נתפסו</div></div>
+            <div className="bg-slate-700/60 rounded-xl py-2"><div className="text-emerald-400 font-bold">{stats.learned}</div><div className="text-slate-400">נלמדו</div></div>
+            <div className="bg-slate-700/60 rounded-xl py-2"><div className="text-amber-300 font-bold">{stats.free}</div><div className="text-slate-400">פנויים</div></div>
+          </div>
+
+          {selectionMode ? (
+            <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100 space-y-2">
+              <div className="font-semibold">בחירת טווח חכמה</div>
+              <div className="text-xs sm:text-sm text-amber-50/90">1. לחץ על דף התחלה · 2. לחץ על דף סיום · 3. כל הדפים הפנויים באמצע יסומנו אוטומטית</div>
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                <span className="text-amber-100/90">
+                  {rangeStart?.masechet===masechet ? `דף התחלה: ${formatDaf(rangeStart.daf)}` : `נבחרו ${selectedCount} דפים במסכת זו`}
+                </span>
+                <button onClick={onClearSelection} className="px-3 py-1.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-white">נקה בחירה</button>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-slate-700 bg-slate-800/70 px-4 py-3 text-xs sm:text-sm text-slate-300">
+              לחצו על דף פנוי לשיבוץ, או על דף תפוס כדי לראות את הסטטוס שלו.
+            </div>
+          )}
+
+          <div className="tractate-daf-grid">
+            {Array.from({ length:mas?.dafim || 0 }, (_, i) => {
+              const daf = i + 2;
+              const st = getDafStatus(masechet, daf);
+              const isSelected = selected.has(`${masechet}|${daf}`);
+              const isRangeStart = rangeStart?.masechet===masechet && rangeStart?.daf===daf;
+              let className = `tractate-daf-cell ${color.theme} flex items-center justify-center `;
+              if (isSelected) className += 'daf-state-selected';
+              else if (st === 'learned') className += 'daf-state-learned';
+              else if (st === 'assigned') className += 'daf-state-assigned';
+              else className += 'daf-state-free';
+              if (!isSelected && isRangeStart) className += ' daf-state-range-start';
+              return (
+                <button
+                  key={daf}
+                  type="button"
+                  onClick={()=>onDafClick(masechet, daf)}
+                  className={className}
+                  title={`${masechet} · דף ${formatDaf(daf)}`}
+                >
+                  {formatDaf(daf)}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </Modal>
+    );
+  };
+
   // ─── SHAS MAP VIEW ────────────────────────────────────────────────────────────
   const ShasMapView = ({ navigate, assignments, selectionMode=false, returnTo='home' }) => {
     const [assignTarget,setAssignTarget]=React.useState(null); // {masechet,daf}
@@ -977,25 +1090,6 @@
     const [pendingSelection,setPendingSelection]=React.useState(null);
     const [loading,setLoading]=React.useState(false);
     const signupIdentity = G.signupDraft;
-    const mapEntries = React.useMemo(
-      () => MASECHOT_DATA.flatMap(mas => [
-        {
-          type: 'label',
-          masechet: mas.name,
-          seder: mas.seder,
-          span: getMasechetLabelSpan(mas.name),
-        },
-        ...Array.from({ length:mas.dafim }, (_, i) => ({
-          type: 'daf',
-          masechet: mas.name,
-          seder: mas.seder,
-          daf: i + 2,
-          isStart: i === 0,
-          span: 1,
-        })),
-      ]),
-      []
-    );
     const totalLearned = React.useMemo(
       () => new Set(assignments.filter(a=>a.learned).map(a=>`${a.masechet}|${a.daf}`)).size,
       [assignments]
@@ -1082,6 +1176,7 @@
     const handleDafClick = (masechet, daf) => {
       if (selectionMode) { toggleSelection(masechet, daf); return; }
       const a = getAssignment(masechet, daf);
+      setMasechetTarget(null);
       if (!a) { setAssignTarget({masechet, daf}); }
       else { setViewTarget({masechet, daf, assignment:a}); }
     };
@@ -1129,53 +1224,17 @@
           )}
         </div>
 
-        {/* Worms container */}
         <div className="flex-1 min-h-0 px-2 pb-2 sm:px-3 sm:pb-3">
-          <div className="flex h-full items-center justify-center rounded-3xl border border-slate-700 bg-slate-800/40 p-2 sm:p-3 overflow-auto">
-            <div
-              className="worm-map-shell"
-              style={{
-                '--worm-cell-size': `${MAP_CELL_SIZE}px`,
-                '--worm-gap': `${MAP_GAP}px`,
-                gridTemplateColumns:`repeat(${MAP_COLS}, ${MAP_CELL_SIZE}px)`,
-              }}
-            >
-              {mapEntries.map(item=>{
-                const color = SEDER_COLORS[item.seder] || FALLBACK_SEDER_COLOR;
-                if (item.type === 'label') {
-                  return (
-                    <button
-                      key={`label|${item.masechet}`}
-                      onClick={()=>setMasechetTarget(item.masechet)}
-                      title={`מסכת ${item.masechet}`}
-                      aria-label={`מסכת ${item.masechet}`}
-                      className={`worm-pixel worm-label ${color.theme}`}
-                      style={{
-                        gridColumn:`span ${item.span} / span ${item.span}`,
-                      }}
-                    >
-                      {item.masechet}
-                    </button>
-                  );
-                }
-                const st = getDafStatus(item.masechet, item.daf);
-                const isSelected = selected.has(`${item.masechet}|${item.daf}`);
-                let className = `worm-pixel worm-cell ${color.theme}`;
-                if (isSelected) className += ' worm-cell--selected';
-                else if (st === 'learned') className += ' worm-cell--learned';
-                else if (st === 'assigned') className += ' worm-cell--assigned';
-                else className += ' worm-cell--free';
-                if (!isSelected && item.isStart) className += ' worm-cell--start';
-                return (
-                  <button
-                    key={`${item.masechet}|${item.daf}`}
-                    onClick={()=>handleDafClick(item.masechet, item.daf)}
-                    title={`${item.masechet} · דף ${formatDaf(item.daf)}${item.isStart ? ' · תחילת מסכת' : ''}`}
-                    aria-label={`${item.masechet} דף ${formatDaf(item.daf)}`}
-                    className={className}
-                  />
-                );
-              })}
+          <div className="h-full rounded-3xl border border-slate-700 bg-slate-800/40 p-3 sm:p-4 overflow-auto">
+            <div className="compact-map-grid">
+              {MASECHOT_DATA.map(mas=>(
+                <TractateCard
+                  key={mas.name}
+                  mas={mas}
+                  selected={selected}
+                  onOpen={()=>setMasechetTarget(mas.name)}
+                />
+              ))}
             </div>
           </div>
         </div>
@@ -1202,35 +1261,15 @@
           </Modal>
         )}
         {masechetTarget && (
-          <Modal onClose={()=>setMasechetTarget(null)}>
-            <div className="p-5 space-y-4">
-              {(()=>{
-                const stats = getMasechetStats(masechetTarget);
-                return (
-                  <>
-                    <div className="space-y-1">
-                      <h3 className="text-lg font-bold text-amber-400">{masechetTarget}</h3>
-                      <p className="text-sm text-slate-300">{stats.mas?.seder} · {stats.mas?.dafim} דפים</p>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                      <div className="bg-slate-700/60 rounded-xl py-2"><div className="text-white font-bold">{stats.assigned}</div><div className="text-slate-400">נתפסו</div></div>
-                      <div className="bg-slate-700/60 rounded-xl py-2"><div className="text-emerald-400 font-bold">{stats.learned}</div><div className="text-slate-400">נלמדו</div></div>
-                      <div className="bg-slate-700/60 rounded-xl py-2"><div className="text-amber-300 font-bold">{stats.free}</div><div className="text-slate-400">פנויים</div></div>
-                    </div>
-                    <div className="bg-slate-700/60 rounded-xl p-3 text-sm text-slate-200 space-y-2">
-                      <div className="font-semibold text-white">טווחים פנויים</div>
-                      {stats.freeBlocks.length ? (
-                        <div className="text-xs leading-6">{stats.freeBlocks.map(r=>`${formatDaf(r.start)}-${formatDaf(r.end)}`).join(' , ')}</div>
-                      ) : (
-                        <div className="text-xs text-slate-400">אין דפים פנויים במסכת זו</div>
-                      )}
-                    </div>
-                    <button onClick={()=>setMasechetTarget(null)} className="w-full bg-slate-600 hover:bg-slate-500 text-white font-semibold py-2 rounded-xl transition-all text-sm">סגור</button>
-                  </>
-                );
-              })()}
-            </div>
-          </Modal>
+          <MasechetDetailModal
+            masechet={masechetTarget}
+            selectionMode={selectionMode}
+            selected={selected}
+            rangeStart={rangeStart}
+            onDafClick={handleDafClick}
+            onClose={()=>setMasechetTarget(null)}
+            onClearSelection={resetSelection}
+          />
         )}
         {pendingSelection && (
           <Modal onClose={()=>setPendingSelection(null)}>
@@ -1260,6 +1299,7 @@
     const [rangeStart,setRangeStart]=React.useState(null);
     const [confirm,setConfirm]=React.useState(null);
     const [loading,setLoading]=React.useState(false);
+    const clearEditSelection = () => { setSelected(new Set()); setRangeStart(null); };
 
     const refresh = async (phone) => {
       const res=await fetch('/api/my-assignments',{headers:{'X-User-Phone':phone||verifiedPhone}});
@@ -1325,7 +1365,7 @@
       }
       await refreshAssignments();
       await refresh(verifiedPhone);
-      setSelected(new Set()); setEditMode(false); setLoading(false);
+      clearEditSelection(); setEditMode(false); setLoading(false);
     };
 
     const deleteSelected = async () => {
@@ -1337,7 +1377,7 @@
         await window.dataSdk.delete({id:rec.id,target_daf:daf,authPhone:verifiedPhone});
       }
       await refresh(verifiedPhone);
-      setSelected(new Set()); setEditMode(false); setLoading(false);
+      clearEditSelection(); setEditMode(false); setLoading(false);
     };
 
     const deleteRange = async (masechet, from, to) => {
@@ -1391,7 +1431,7 @@
           <div className="flex gap-2">
             <button onClick={handleAddPages} className="bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold px-3 py-1.5 rounded-xl transition-all">+ הוספת דפים</button>
             {!showVerify && myData.length>0 && (
-              <button onClick={()=>{setEditMode(!editMode);setSelected(new Set());setRangeStart(null);}}
+              <button onClick={()=>{setEditMode(!editMode);clearEditSelection();}}
                 className={`flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-xl border transition-all ${editMode?'bg-amber-600 border-amber-500 text-white':'bg-slate-700 border-slate-600 text-slate-300 hover:text-white'}`}>
                 <IcEdit />{editMode?'סיום עריכה':'עריכת דפים'}
               </button>
@@ -1457,10 +1497,14 @@
                 <span className="bg-amber-600 rounded-full p-1.5"><IcEdit /></span>
                 <div>
                   <div className="font-bold text-sm">מצב עריכה</div>
-                  <div className="text-xs text-slate-400">לחץ על הדף הראשון ואז האחרון לבחירת טווח</div>
+                  <div className="text-xs text-slate-400">בחר דף התחלה ואז דף סיום כדי לסמן טווח שלם</div>
                 </div>
               </div>
-              <div className="flex gap-2 w-full sm:w-auto">
+              <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                <button onClick={clearEditSelection} disabled={selected.size===0 && !rangeStart}
+                  className="flex-1 sm:flex-none px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:opacity-40 text-white font-semibold rounded-xl text-sm transition-all">
+                  נקה בחירה
+                </button>
                 <button onClick={()=>setConfirm({type:'markLearned'})} disabled={selected.size===0||loading}
                   className="flex-1 sm:flex-none px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-semibold rounded-xl text-sm transition-all flex items-center gap-1 justify-center">
                   <IcCheck /> סמן כנלמד
