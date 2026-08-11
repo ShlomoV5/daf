@@ -756,7 +756,7 @@
           <h3 class="font-bold text-amber-400">${hasFull ? '🏆 ' : ''}${masechet}</h3>
           <button type="button" class="px-2 py-1 bg-red-600/70 hover:bg-red-600 text-white rounded text-xs transition-all" aria-label="הסר מסכת">✕</button>
         `;
-        header.querySelector('button').onclick = () => confirmDeleteMasechet(verifiedMyPagesUser, masechet);
+        header.querySelector('button').onclick = () => confirmDeleteMasechet(masechet);
         card.appendChild(header);
         if (uniqueDafim.length > 0) {
           const rangeControls = document.createElement('div');
@@ -773,8 +773,12 @@
             <button type="button" id="range-learned-${index}" class="px-2 py-1 bg-emerald-600/80 hover:bg-emerald-500 text-white rounded text-xs transition-all">סמן כנלמד</button>
           `;
           card.appendChild(rangeControls);
-          rangeControls.querySelector(`#range-delete-${index}`).onclick = () => confirmDeleteRange(verifiedMyPagesUser, masechet, rangeFromSelectId, rangeToSelectId);
-          rangeControls.querySelector(`#range-learned-${index}`).onclick = () => confirmMarkRangeLearned(verifiedMyPagesUser, masechet, rangeFromSelectId, rangeToSelectId);
+          const fromSelect = rangeControls.querySelector(`#${rangeFromSelectId}`);
+          const toSelect = rangeControls.querySelector(`#${rangeToSelectId}`);
+          fromSelect.value = uniqueDafim[0];
+          toSelect.value = uniqueDafim[uniqueDafim.length - 1];
+          rangeControls.querySelector(`#range-delete-${index}`).onclick = () => confirmDeleteRange(masechet, rangeFromSelectId, rangeToSelectId);
+          rangeControls.querySelector(`#range-learned-${index}`).onclick = () => confirmMarkRangeLearned(masechet, rangeFromSelectId, rangeToSelectId);
         }
         if (hasFull && mas) {
           const learnedCount = items.filter(item => item.learned).length;
@@ -856,7 +860,6 @@
     }
 
     function openDafModal(masechet, daf) {
-      const assignment = myAssignments.find(a => a.masechet === masechet && a.daf === daf);
       const status = getDafStatus(masechet, daf);
       
       if (status === 'free') {
@@ -944,8 +947,8 @@
       `);
     }
 
-    function confirmDeleteMasechet(name, masechet) {
-      window.pendingMasechetDelete = { name, masechet };
+    function confirmDeleteMasechet(masechet) {
+      window.pendingMasechetDelete = { masechet };
       showModal(`
         <div class="p-6 text-center">
           <div class="w-16 h-16 bg-red-600/20 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -967,7 +970,7 @@
       `);
     }
 
-    function confirmDeleteRange(name, masechet, fromSelectId, toSelectId) {
+    function confirmDeleteRange(masechet, fromSelectId, toSelectId) {
       const fromValue = parseInt(document.getElementById(fromSelectId)?.value);
       const toValue = parseInt(document.getElementById(toSelectId)?.value);
       if (!fromValue || !toValue) {
@@ -976,12 +979,7 @@
       }
       const start = Math.min(fromValue, toValue);
       const end = Math.max(fromValue, toValue);
-      window.pendingRangeDelete = {
-        name,
-        masechet,
-        start,
-        end
-      };
+      window.pendingRangeDelete = { masechet, start, end };
       showModal(`
         <div class="p-6 text-center">
           <div class="w-16 h-16 bg-red-600/20 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -1003,7 +1001,7 @@
       `);
     }
 
-    function confirmMarkRangeLearned(name, masechet, fromSelectId, toSelectId) {
+    function confirmMarkRangeLearned(masechet, fromSelectId, toSelectId) {
       const fromValue = parseInt(document.getElementById(fromSelectId)?.value);
       const toValue = parseInt(document.getElementById(toSelectId)?.value);
       if (!fromValue || !toValue) {
@@ -1012,12 +1010,7 @@
       }
       const start = Math.min(fromValue, toValue);
       const end = Math.max(fromValue, toValue);
-      window.pendingRangeLearned = {
-        name,
-        masechet,
-        start,
-        end
-      };
+      window.pendingRangeLearned = { masechet, start, end };
       showModal(`
         <div class="p-6 text-center">
           <h3 class="text-lg font-bold text-white mb-2">סימון טווח כנלמד</h3>
@@ -1575,7 +1568,7 @@
         closeModal({ target: {}, currentTarget: {} });
         return;
       }
-      const isOk = await deleteMasechetAssignments(pending.name, pending.masechet);
+      const isOk = await deleteMasechetAssignments(pending.masechet);
       window.pendingMasechetDelete = null;
       closeModal({ target: {}, currentTarget: {} });
       if (isOk) {
@@ -1583,7 +1576,7 @@
       }
     }
 
-    async function deleteMasechetAssignments(name, masechet) {
+    async function deleteMasechetAssignments(masechet) {
       const toDelete = myAssignments.filter(record => record.masechet === masechet);
       if (toDelete.length === 0) {
         showToast('שיבוץ לא נמצא', 'error');
@@ -1606,7 +1599,7 @@
         closeModal({ target: {}, currentTarget: {} });
         return;
       }
-      const isOk = await deleteMasechetRange(pending.name, pending.masechet, pending.start, pending.end);
+      const isOk = await deleteMasechetRange(pending.masechet, pending.start, pending.end);
       window.pendingRangeDelete = null;
       closeModal({ target: {}, currentTarget: {} });
       if (isOk) {
@@ -1620,7 +1613,7 @@
         closeModal({ target: {}, currentTarget: {} });
         return;
       }
-      const isOk = await markMasechetRangeLearned(pending.name, pending.masechet, pending.start, pending.end);
+      const isOk = await markMasechetRangeLearned(pending.masechet, pending.start, pending.end);
       window.pendingRangeLearned = null;
       closeModal({ target: {}, currentTarget: {} });
       if (isOk) {
@@ -1628,7 +1621,7 @@
       }
     }
 
-    async function deleteMasechetRange(name, masechet, start, end) {
+    async function deleteMasechetRange(masechet, start, end) {
       const rangeStart = Math.min(start, end);
       const rangeEnd = Math.max(start, end);
       let deleted = false;
@@ -1660,7 +1653,7 @@
       return true;
     }
 
-    async function markMasechetRangeLearned(name, masechet, start, end) {
+    async function markMasechetRangeLearned(masechet, start, end) {
       const rangeStart = Math.min(start, end);
       const rangeEnd = Math.max(start, end);
       let updated = false;

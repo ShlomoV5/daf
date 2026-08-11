@@ -563,6 +563,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             return
         if not self._authorize_assignment_change(assignment_id, payload):
             return
+        authorized_assignment = getattr(self, "_authorized_assignment", None)
         try:
             target_daf = None
             if isinstance(payload, dict):
@@ -578,11 +579,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             else:
                 if not self._is_backup_authorized() and "phone" in payload:
                     payload = dict(payload)
-                    existing = store.get_assignment(assignment_id)
-                    if not existing:
-                        self._send_json({"error": "Assignment not found"}, status=404)
-                        return
-                    payload["phone"] = existing.get("phone", "")
+                    payload["phone"] = (authorized_assignment or {}).get("phone", "")
                 record = store.update_assignment(assignment_id, payload)
         except ValueError:
             self._send_json({"error": "Invalid payload"}, status=400)
@@ -891,17 +888,13 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     def _authorize_assignment_change(self, assignment_id: int, payload: dict | None = None) -> bool:
         if self._is_backup_authorized():
+            self._authorized_assignment = store.get_assignment(assignment_id)
             return True
         assignment = store.get_assignment(assignment_id)
         if not assignment:
             self._send_json({"error": "Assignment not found"}, status=404)
             return False
         verified_phone = self._get_verified_phone()
-        if not verified_phone:
-            if isinstance(payload, dict):
-                candidate_phone = store.normalize_phone(payload.get("phone"))
-                if candidate_phone:
-                    verified_phone = candidate_phone
         owner_phone = store.normalize_phone(assignment.get("phone"))
         if not verified_phone:
             self._send_json({"error": "Phone is required"}, status=400)
@@ -909,6 +902,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         if verified_phone != owner_phone:
             self._send_json({"error": "Forbidden"}, status=403)
             return False
+        self._authorized_assignment = assignment
         return True
 
     @staticmethod
