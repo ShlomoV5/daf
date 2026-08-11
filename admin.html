@@ -126,6 +126,10 @@
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
             <span class="text-sm">הדפים שלי</span>
           </button>
+          <button onclick="openAllLearners()" class="bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-semibold py-4 px-4 rounded-xl transition-all shadow-lg flex flex-col items-center gap-1">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5V4H2v16h5m10 0v-2a4 4 0 00-8 0v2m8 0H9m4-9a3 3 0 110-6 3 3 0 010 6z"/></svg>
+            <span class="text-sm">כל הלומדים</span>
+          </button>
         </div>
 
         <!-- Masechot List -->
@@ -163,7 +167,10 @@
         </button>
 
         <div class="bg-slate-700/50 rounded-xl p-4 mb-4 border border-slate-600">
-          <h2 class="text-xl font-bold text-amber-400 mb-3">הזן מספר טלפון לצפייה בדפים שלך</h2>
+          <h2 class="text-xl font-bold text-amber-400 mb-3">בחר שם לצפייה בדפים</h2>
+          <select id="names-select" onchange="handleMyPagesNameSelection()" class="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-white focus:border-amber-500 focus:outline-none">
+            <option value="">-- בחר שם --</option>
+          </select>
           <div id="my-pages-phone-verification" class="hidden mt-3 space-y-2">
             <label for="my-pages-phone" class="block text-sm font-medium text-slate-300">אימות טלפון *</label>
             <div class="flex gap-2">
@@ -175,12 +182,24 @@
             </div>
             <p class="text-xs text-slate-400">יש להזין את מספר הטלפון של המשתמש כדי לצפות ולערוך.</p>
           </div>
-          <button type="button" onclick="startMyPagesVerification()" class="mt-3 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-4 py-2 rounded-xl transition-all">
-            הצג את הדפים שלי
-          </button>
         </div>
 
         <div id="my-pages-content" class="space-y-4"></div>
+      </div>
+
+      <!-- All Learners Screen (admin) -->
+      <div id="all-learners-screen" class="hidden">
+        <button onclick="goHome()" class="flex items-center gap-2 text-amber-400 mb-4 hover:text-amber-300 transition-colors">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+          חזרה לרשימה
+        </button>
+        <div class="bg-slate-700/50 rounded-xl p-4 mb-4 border border-slate-600">
+          <h2 class="text-xl font-bold text-amber-400 mb-3">כל הלומדים</h2>
+          <select id="all-learners-select" onchange="handleAllLearnersSelection()" class="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-white focus:border-amber-500 focus:outline-none">
+            <option value="">-- בחר לומד --</option>
+          </select>
+        </div>
+        <div id="all-learners-content" class="space-y-4"></div>
       </div>
     </main>
 
@@ -237,10 +256,9 @@
 
     let assignmentRanges = [];
     let assignments = [];
-    let myAssignments = [];
     let currentMasechet = null;
     let verifiedMyPagesUser = null;
-    let verifiedMyPagesPhone = '';
+    let selectedAllLearnersKey = null;
 
     const defaultConfig = {
       site_title: "מסיימים ש״ס יחד אחים",
@@ -281,6 +299,41 @@
       return /^\d{9,15}$/.test(phone);
     }
 
+    function findExistingUserByPhone(phone) {
+      if (!phone) return null;
+      return assignmentRanges.find(a => normalizePhone(a.phone) === phone) || null;
+    }
+
+    function openPhoneConflictModal(existingName, enteredName) {
+      return new Promise(resolve => {
+        showModal(`
+          <div class="p-6">
+            <h3 class="text-lg font-bold text-amber-400 mb-3">מספר טלפון כבר קיים</h3>
+            <p class="text-slate-300 text-sm mb-4">
+              מספר הטלפון כבר משויך ל-${existingName}. ניתן להשתמש בפרטים הקיימים או להזין מספר אחר.
+            </p>
+            <div class="space-y-2">
+              <button id="use-existing-phone-btn" type="button" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-3 px-4 rounded-xl transition-all">
+                השתמש בפרטים הקיימים
+              </button>
+              <button id="use-different-phone-btn" type="button" class="w-full bg-slate-600 hover:bg-slate-500 text-white font-semibold py-3 px-4 rounded-xl transition-all">
+                הזן מספר אחר
+              </button>
+            </div>
+            ${enteredName && enteredName !== existingName ? `<p class="text-xs text-slate-400 mt-3">השם שהוזן (${enteredName}) לא יישמר אם תבחר בפרטים הקיימים.</p>` : ''}
+          </div>
+        `);
+        document.getElementById('use-existing-phone-btn').onclick = () => {
+          closeModal({ target: {}, currentTarget: {} });
+          resolve('use_existing');
+        };
+        document.getElementById('use-different-phone-btn').onclick = () => {
+          closeModal({ target: {}, currentTarget: {} });
+          resolve('use_different');
+        };
+      });
+    }
+
     async function resolveSignupIdentity(name, rawPhone, dedication = '') {
       const normalizedPhone = normalizePhone(rawPhone);
       if (!name) {
@@ -291,7 +344,23 @@
         showToast('אנא הזן מספר טלפון תקין', 'error');
         return null;
       }
-      return { name, phone: normalizedPhone, dedication };
+      const existing = findExistingUserByPhone(normalizedPhone);
+      if (!existing) {
+        return { name, phone: normalizedPhone, dedication };
+      }
+      if (existing.name === name) {
+        return { name: existing.name, phone: normalizedPhone, dedication };
+      }
+      const choice = await openPhoneConflictModal(existing.name, name);
+      if (choice !== 'use_existing') {
+        showToast('הזן מספר טלפון אחר ונסה שוב', 'info');
+        return null;
+      }
+      return {
+        name: existing.name,
+        phone: normalizedPhone,
+        dedication: (existing.dedication || dedication || '').trim()
+      };
     }
 
     function formatIcsDate(date) {
@@ -526,6 +595,33 @@
       }
     }
 
+    function getUserGroups() {
+      const groups = new Map();
+      assignmentRanges.forEach(record => {
+        const phone = normalizePhone(record.phone);
+        const key = phone ? `phone:${phone}` : `name:${record.name}`;
+        const current = groups.get(key);
+        if (!current) {
+          groups.set(key, {
+            key,
+            name: record.name,
+            phone: phone || '',
+            dedication: record.dedication || '',
+            records: [record]
+          });
+          return;
+        }
+        current.records.push(record);
+        if (!current.phone && phone) {
+          current.phone = phone;
+        }
+        if (!current.dedication && record.dedication) {
+          current.dedication = record.dedication;
+        }
+      });
+      return [...groups.values()].sort((a, b) => a.name.localeCompare(b.name, 'he'));
+    }
+
     function escapeHtml(value) {
       return String(value ?? '')
         .replace(/&/g, '&amp;')
@@ -533,6 +629,10 @@
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+    }
+
+    function getUserByKey(userKey) {
+      return getUserGroups().find(group => group.key === userKey) || null;
     }
 
     const COUNTDOWN_TARGET = new Date(2026, 10, 29, 0, 0, 0);
@@ -663,7 +763,7 @@
         const cell = document.createElement('div');
         cell.className = `daf-cell rounded-lg flex items-center justify-center cursor-pointer font-medium ${getStatusColor(status)}`;
         cell.textContent = formatDafNumber(daf);
-        cell.title = assignment ? `דף תפוס` : `דף ${formatDafNumber(daf)} - פנוי`;
+        cell.title = assignment ? `${assignment.name}${assignment.dedication ? ' - ' + assignment.dedication : ''}` : `דף ${formatDafNumber(daf)} - פנוי`;
         cell.onclick = () => openDafModal(mas.name, daf);
         
         grid.appendChild(cell);
@@ -671,97 +771,124 @@
     }
 
     function renderMyPages() {
-      myAssignments = [];
-      verifiedMyPagesUser = null;
-      verifiedMyPagesPhone = '';
+      const namesSelect = document.getElementById('names-select');
+      const uniqueNames = [...new Set(assignments.map(a => a.name))].sort();
+      
+      namesSelect.innerHTML = '<option value="">-- בחר שם --</option>';
+      uniqueNames.forEach(name => {
+        const option = document.createElement('option');
+        option.value = name;
+        option.textContent = name;
+        namesSelect.appendChild(option);
+      });
+      
       const content = document.getElementById('my-pages-content');
-      content.innerHTML = '<div class="text-center text-slate-400 py-8">יש להזין מספר טלפון כדי להציג ולערוך.</div>';
+      content.innerHTML = '';
+      verifiedMyPagesUser = null;
       const verificationPanel = document.getElementById('my-pages-phone-verification');
       const phoneInput = document.getElementById('my-pages-phone');
       verificationPanel.classList.add('hidden');
       phoneInput.value = '';
     }
 
-    function startMyPagesVerification() {
+    function handleMyPagesNameSelection() {
+      const selectedName = document.getElementById('names-select').value;
       const content = document.getElementById('my-pages-content');
-      content.innerHTML = '';
       const verificationPanel = document.getElementById('my-pages-phone-verification');
       const phoneInput = document.getElementById('my-pages-phone');
+      verifiedMyPagesUser = null;
+      content.innerHTML = '';
+      if (!selectedName) {
+        verificationPanel.classList.add('hidden');
+        phoneInput.value = '';
+        return;
+      }
       verificationPanel.classList.remove('hidden');
+      phoneInput.value = '';
       phoneInput.focus();
     }
 
-    async function verifyMyPagesPhone() {
+    function verifyMyPagesPhone() {
+      const selectedName = document.getElementById('names-select').value;
       const enteredPhone = normalizePhone(document.getElementById('my-pages-phone').value);
+      if (!selectedName) {
+        showToast('בחר שם תחילה', 'error');
+        return;
+      }
       if (!isValidPhone(enteredPhone)) {
         showToast('אנא הזן מספר טלפון תקין', 'error');
         return;
       }
-      const response = await fetch('/api/my-assignments', {
-        headers: { 'X-User-Phone': enteredPhone }
-      });
-      if (!response.ok) {
-        showToast('אימות נכשל', 'error');
+      const userAssignments = assignments.filter(a => a.name === selectedName);
+      const isMatch = userAssignments.some(a => normalizePhone(a.phone) === enteredPhone);
+      if (!isMatch) {
+        showToast('מספר הטלפון אינו תואם לשם שנבחר', 'error');
         return;
       }
-      const data = await response.json();
-      myAssignments = data.map(normalizeAssignment);
-      verifiedMyPagesPhone = enteredPhone;
-      verifiedMyPagesUser = myAssignments[0]?.name || '';
+      verifiedMyPagesUser = selectedName;
       document.getElementById('my-pages-phone-verification').classList.add('hidden');
       updateMyPagesView();
     }
 
-    async function refreshMyAssignmentsData() {
-      if (!verifiedMyPagesPhone) return false;
-      const response = await fetch('/api/my-assignments', {
-        headers: { 'X-User-Phone': verifiedMyPagesPhone }
-      });
-      if (!response.ok) return false;
-      const data = await response.json();
-      myAssignments = data.map(normalizeAssignment);
-      verifiedMyPagesUser = myAssignments[0]?.name || verifiedMyPagesUser;
-      updateMyPagesView();
-      return true;
-    }
-
     function updateMyPagesView() {
+      const selectedName = document.getElementById('names-select').value;
       const content = document.getElementById('my-pages-content');
       content.innerHTML = '';
-      if (!verifiedMyPagesPhone) {
+      
+      if (!selectedName) return;
+      if (verifiedMyPagesUser !== selectedName) {
         content.innerHTML = '<div class="text-center text-slate-400 py-8">יש לאמת מספר טלפון כדי להמשיך</div>';
         return;
       }
-      if (myAssignments.length === 0) {
-        content.innerHTML = '<div class="text-center text-slate-400 py-8">לא נמצאו דפים למספר זה</div>';
+      
+      const userAssignments = assignments.filter(a => a.name === selectedName);
+      
+      if (userAssignments.length === 0) {
+        content.innerHTML = '<div class="text-center text-slate-400 py-8">אין דפים לשם זה</div>';
         return;
       }
+
       const orderIndex = new Map(MASECHOT_DATA.map((m, index) => [m.name, index]));
       const byMasechet = {};
-      myAssignments.forEach(a => {
-        if (!byMasechet[a.masechet]) byMasechet[a.masechet] = [];
+      userAssignments.forEach(a => {
+        if (!byMasechet[a.masechet]) {
+          byMasechet[a.masechet] = [];
+        }
         byMasechet[a.masechet].push(a);
       });
-      const sortedMasechot = Object.keys(byMasechet).sort((a, b) => (orderIndex.get(a) ?? 999) - (orderIndex.get(b) ?? 999));
+
+      const sortedMasechot = Object.keys(byMasechet).sort((a, b) => {
+        const orderA = orderIndex.has(a) ? orderIndex.get(a) : Number.MAX_SAFE_INTEGER;
+        const orderB = orderIndex.has(b) ? orderIndex.get(b) : Number.MAX_SAFE_INTEGER;
+        if (orderA === orderB) {
+          return a.localeCompare(b);
+        }
+        return orderA - orderB;
+      });
+
       sortedMasechot.forEach((masechet, index) => {
         const items = [...byMasechet[masechet]].sort((a, b) => a.daf - b.daf);
         const uniqueDafim = [...new Set(items.map(item => item.daf))].sort((a, b) => a - b);
         const hasFull = items.some(item => item.is_full_masechet);
         const mas = MASECHOT_DATA.find(m => m.name === masechet);
+
         const card = document.createElement('div');
         card.className = 'bg-slate-700/50 rounded-xl p-4 border border-slate-600 space-y-3';
+
         const header = document.createElement('div');
         header.className = 'flex items-center justify-between gap-2';
         header.innerHTML = `
           <h3 class="font-bold text-amber-400">${hasFull ? '🏆 ' : ''}${masechet}</h3>
           <button type="button" class="px-2 py-1 bg-red-600/70 hover:bg-red-600 text-white rounded text-xs transition-all" aria-label="הסר מסכת">✕</button>
         `;
-        header.querySelector('button').onclick = () => confirmDeleteMasechet(verifiedMyPagesUser, masechet);
+        header.querySelector('button').onclick = () => confirmDeleteMasechet(selectedName, masechet);
         card.appendChild(header);
+
         if (uniqueDafim.length > 0) {
           const rangeControls = document.createElement('div');
           const rangeFromSelectId = `range-from-${index}`;
           const rangeToSelectId = `range-to-${index}`;
+          const rangeDeleteButtonId = `range-delete-${index}`;
           const options = uniqueDafim.map(d => `<option value="${d}">${formatDafNumber(d)}</option>`).join('');
           rangeControls.className = 'flex flex-wrap items-center gap-2 text-xs text-slate-300';
           rangeControls.innerHTML = `
@@ -769,37 +896,158 @@
             <select id="${rangeFromSelectId}" class="bg-slate-700 border border-slate-600 rounded-lg px-2 py-1 text-white">${options}</select>
             <span class="text-slate-400">עד</span>
             <select id="${rangeToSelectId}" class="bg-slate-700 border border-slate-600 rounded-lg px-2 py-1 text-white">${options}</select>
-            <button type="button" id="range-delete-${index}" class="px-2 py-1 bg-red-600/70 hover:bg-red-600 text-white rounded text-xs transition-all">הסר</button>
+            <button type="button" id="${rangeDeleteButtonId}" class="px-2 py-1 bg-red-600/70 hover:bg-red-600 text-white rounded text-xs transition-all">הסר</button>
             <button type="button" id="range-learned-${index}" class="px-2 py-1 bg-emerald-600/80 hover:bg-emerald-500 text-white rounded text-xs transition-all">סמן כנלמד</button>
           `;
           card.appendChild(rangeControls);
-          rangeControls.querySelector(`#range-delete-${index}`).onclick = () => confirmDeleteRange(verifiedMyPagesUser, masechet, rangeFromSelectId, rangeToSelectId);
-          rangeControls.querySelector(`#range-learned-${index}`).onclick = () => confirmMarkRangeLearned(verifiedMyPagesUser, masechet, rangeFromSelectId, rangeToSelectId);
+          const fromSelect = rangeControls.querySelector(`#${rangeFromSelectId}`);
+          const toSelect = rangeControls.querySelector(`#${rangeToSelectId}`);
+          fromSelect.value = uniqueDafim[0];
+          toSelect.value = uniqueDafim[uniqueDafim.length - 1];
+          rangeControls.querySelector(`#${rangeDeleteButtonId}`).onclick = () => confirmDeleteRange(selectedName, masechet, rangeFromSelectId, rangeToSelectId);
+          rangeControls.querySelector(`#range-learned-${index}`).onclick = () => confirmMarkRangeLearned(selectedName, masechet, rangeFromSelectId, rangeToSelectId);
         }
+
         if (hasFull && mas) {
           const learnedCount = items.filter(item => item.learned).length;
           const progress = (learnedCount / mas.dafim) * 100;
+          const dedication = items.find(item => item.dedication)?.dedication;
+
           const progressBlock = document.createElement('div');
           progressBlock.innerHTML = `
-            <div class="flex justify-between items-center text-sm text-slate-400 mb-2"><span>${learnedCount}/${mas.dafim}</span></div>
-            <div class="h-2 bg-slate-600 rounded-full overflow-hidden"><div class="h-full bg-gradient-to-r from-blue-500 to-emerald-500 transition-all" style="width: ${progress}%"></div></div>
-          `;
-          card.appendChild(progressBlock);
-        }
-        items.forEach(item => {
-          const itemDiv = document.createElement('div');
-          itemDiv.className = `bg-slate-600/50 rounded-lg p-3 text-sm flex justify-between items-center ${item.learned ? 'opacity-60' : ''}`;
-          itemDiv.innerHTML = `
-            <div><span class="font-semibold">${masechet}</span><span class="text-slate-400 text-xs"> דף ${formatDafNumber(item.daf)}</span></div>
-            <div class="flex items-center gap-2">
-              <button onclick="toggleLearned(${item.id}, ${item.daf})" class="px-2 py-1 ${item.learned ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-blue-600 hover:bg-blue-500'} text-white rounded text-xs transition-all">${item.learned ? '✓' : '◯'}</button>
-              <button onclick="confirmDelete('${masechet}', ${item.daf})" class="px-2 py-1 bg-red-600/70 hover:bg-red-600 text-white rounded text-xs transition-all" aria-label="הסר דף">✕</button>
+            <div class="flex justify-between items-center text-sm text-slate-400 mb-2">
+              <span>${learnedCount}/${mas.dafim}</span>
+            </div>
+            <div class="h-2 bg-slate-600 rounded-full overflow-hidden">
+              <div class="h-full bg-gradient-to-r from-blue-500 to-emerald-500 transition-all" style="width: ${progress}%"></div>
             </div>
           `;
-          card.appendChild(itemDiv);
-        });
+          card.appendChild(progressBlock);
+
+          if (dedication) {
+            const dedicationText = document.createElement('p');
+            dedicationText.className = 'text-slate-400 text-sm';
+            dedicationText.textContent = dedication;
+            card.appendChild(dedicationText);
+          }
+
+          const grid = document.createElement('div');
+          grid.className = 'grid grid-cols-6 gap-1';
+          const itemsMap = new Map(items.map(item => [item.daf, item]));
+
+          for (let daf = 2; daf <= mas.dafim + 1; daf++) {
+            const assignment = itemsMap.get(daf);
+            const cell = document.createElement('button');
+            cell.type = 'button';
+            cell.className = `w-full aspect-square rounded text-xs font-semibold transition-all ${assignment?.learned ? 'bg-emerald-500 text-white' : assignment ? 'bg-blue-500 text-white' : 'bg-slate-600 text-slate-400'}`;
+            cell.textContent = formatDafNumber(daf);
+            cell.onclick = (e) => {
+              e.preventDefault();
+              if (assignment) {
+                window.dataSdk.update({
+                  id: assignment.id,
+                  learned: !assignment.learned,
+                  target_daf: daf
+                }).then(result => {
+                  if (result.isOk) {
+                    updateMyPagesView();
+                  }
+                });
+              }
+            };
+            grid.appendChild(cell);
+          }
+          card.appendChild(grid);
+        } else {
+          items.forEach(item => {
+            const itemDiv = document.createElement('div');
+            itemDiv.className = `bg-slate-600/50 rounded-lg p-3 text-sm flex justify-between items-center ${item.learned ? 'opacity-60' : ''}`;
+            itemDiv.innerHTML = `
+              <div>
+                <span class="font-semibold">${masechet}</span>
+                <span class="text-slate-400 text-xs"> דף ${formatDafNumber(item.daf)}</span>
+                ${item.dedication ? `<div class="text-slate-400 text-xs mt-1">${item.dedication}</div>` : ''}
+              </div>
+              <div class="flex items-center gap-2">
+                <button onclick="toggleLearned(${item.id}, ${item.daf})" class="px-2 py-1 ${item.learned ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-blue-600 hover:bg-blue-500'} text-white rounded text-xs transition-all">
+                  ${item.learned ? '✓' : '◯'}
+                </button>
+                <button onclick="confirmDelete('${masechet}', ${item.daf})" class="px-2 py-1 bg-red-600/70 hover:bg-red-600 text-white rounded text-xs transition-all" aria-label="הסר דף">
+                  ✕
+                </button>
+              </div>
+            `;
+            card.appendChild(itemDiv);
+          });
+        }
+
         content.appendChild(card);
       });
+    }
+
+    function renderAllLearnersSelect() {
+      const select = document.getElementById('all-learners-select');
+      const groups = getUserGroups();
+      const currentValue = selectedAllLearnersKey;
+      select.innerHTML = '<option value="">-- בחר לומד --</option>';
+      groups.forEach(group => {
+        const pagesCount = group.records.reduce((sum, record) => {
+          return sum + ((record.daf_end ?? record.daf) - record.daf + 1);
+        }, 0);
+        const option = document.createElement('option');
+        option.value = group.key;
+        option.textContent = `${group.name} (${pagesCount} דפים${group.phone ? ` · ${group.phone}` : ''})`;
+        select.appendChild(option);
+      });
+      if (currentValue && groups.some(group => group.key === currentValue)) {
+        select.value = currentValue;
+      } else {
+        selectedAllLearnersKey = '';
+      }
+    }
+
+    function handleAllLearnersSelection() {
+      selectedAllLearnersKey = document.getElementById('all-learners-select').value;
+      renderAllLearnersView();
+    }
+
+    async function saveAllLearnerDetails() {
+      const user = getUserByKey(selectedAllLearnersKey);
+      if (!user) return;
+      const name = document.getElementById('all-learner-name')?.value.trim();
+      const phone = normalizePhone(document.getElementById('all-learner-phone')?.value);
+      const dedication = document.getElementById('all-learner-dedication')?.value.trim();
+      if (!name) {
+        showToast('יש להזין שם', 'error');
+        return;
+      }
+      if (phone && !isValidPhone(phone)) {
+        showToast('אנא הזן מספר טלפון תקין', 'error');
+        return;
+      }
+      for (const record of user.records) {
+        const result = await window.dataSdk.update({
+          id: record.id,
+          masechet: record.masechet,
+          daf: record.daf,
+          daf_end: record.daf_end ?? record.daf,
+          name,
+          phone,
+          dedication: dedication || '',
+          learned: record.learned,
+          is_full_masechet: record.is_full_masechet
+        }, { skipRefresh: true });
+        if (!result.isOk) {
+          showToast('שגיאה בעדכון פרטים', 'error');
+          return;
+        }
+      }
+      await refreshAssignments();
+      const refreshed = getUserGroups().find(group => group.records.some(record => user.records.some(old => old.id === record.id)));
+      selectedAllLearnersKey = refreshed?.key || selectedAllLearnersKey;
+      renderAllLearnersSelect();
+      renderAllLearnersView();
+      showActionDoneModal('פרטי ההרשמה עודכנו.');
     }
 
     function getFreeDafimByMasechet(masechet) {
@@ -814,12 +1062,222 @@
       return free;
     }
 
+    function updateAllLearnersQuickAddOptions() {
+      const masechetSelect = document.getElementById('all-quick-masechet');
+      const fromSelect = document.getElementById('all-quick-from');
+      const toSelect = document.getElementById('all-quick-to');
+      if (!masechetSelect || !fromSelect || !toSelect) return;
+      const freeDafim = getFreeDafimByMasechet(masechetSelect.value);
+      const options = freeDafim.map(daf => `<option value="${daf}">${formatDafNumber(daf)}</option>`).join('');
+      fromSelect.innerHTML = options;
+      toSelect.innerHTML = options;
+      if (freeDafim.length) {
+        fromSelect.value = freeDafim[0];
+        toSelect.value = freeDafim[freeDafim.length - 1];
+      }
+    }
+
+    async function quickAddForAllLearner() {
+      const user = getUserByKey(selectedAllLearnersKey);
+      if (!user) return;
+      if (!user.phone || !isValidPhone(user.phone)) {
+        showToast('יש להשלים מספר טלפון תקין בפרטי הלומד לפני הוספת דפים', 'error');
+        return;
+      }
+      const masechet = document.getElementById('all-quick-masechet')?.value;
+      const fromDaf = parseInt(document.getElementById('all-quick-from')?.value);
+      const toDaf = parseInt(document.getElementById('all-quick-to')?.value);
+      if (!masechet || Number.isNaN(fromDaf) || Number.isNaN(toDaf)) {
+        showToast('יש לבחור מסכת וטווח דפים להוספה', 'error');
+        return;
+      }
+      const start = Math.min(fromDaf, toDaf);
+      const end = Math.max(fromDaf, toDaf);
+      const dafim = [];
+      for (let daf = start; daf <= end; daf += 1) {
+        if (!getAssignment(masechet, daf)) {
+          dafim.push(daf);
+        }
+      }
+      if (!dafim.length) {
+        showToast('הדפים שנבחרו כבר תפוסים', 'error');
+        return;
+      }
+      const ranges = buildDafRanges(dafim);
+      const records = ranges.map(range => ({
+        masechet,
+        daf: range.start,
+        daf_end: range.end,
+        name: user.name,
+        phone: user.phone || '',
+        dedication: user.dedication || '',
+        learned: false,
+        is_full_masechet: false
+      }));
+      const result = await window.dataSdk.createBulk(records);
+      if (!result.isOk) {
+        showToast('שגיאה בהוספה', 'error');
+        return;
+      }
+      await refreshAssignments();
+      renderAllLearnersSelect();
+      renderAllLearnersView();
+      showActionDoneModal('הדפים נוספו בהצלחה.');
+    }
+
+    async function deleteAllLearnerBatch(batchId) {
+      const record = assignmentRanges.find(item => item.id === batchId);
+      if (!record) {
+        showToast('שיבוץ לא נמצא', 'error');
+        return;
+      }
+      const result = await window.dataSdk.delete({ id: record.id });
+      if (!result.isOk) {
+        showToast('שגיאה במחיקה', 'error');
+        return;
+      }
+      await refreshAssignments();
+      renderAllLearnersSelect();
+      renderAllLearnersView();
+      showActionDoneModal('השיבוץ נמחק.');
+    }
+
+    async function markAllLearnerBatchRead(batchId) {
+      const record = assignmentRanges.find(item => item.id === batchId);
+      if (!record) {
+        showToast('שיבוץ לא נמצא', 'error');
+        return;
+      }
+      for (let daf = record.daf; daf <= (record.daf_end ?? record.daf); daf += 1) {
+        const assignment = assignments.find(item => item.id === record.id && item.daf === daf)
+          || assignments.find(item =>
+            item.masechet === record.masechet
+            && item.daf === daf
+            && item.name === record.name
+            && normalizePhone(item.phone) === normalizePhone(record.phone)
+          );
+        if (!assignment || assignment.learned) {
+          continue;
+        }
+        const result = await window.dataSdk.update({
+          id: assignment.id,
+          learned: true,
+          target_daf: daf
+        }, { skipRefresh: true });
+        if (!result.isOk) {
+          showToast('שגיאה בעדכון', 'error');
+          return;
+        }
+      }
+      await refreshAssignments();
+      renderAllLearnersSelect();
+      renderAllLearnersView();
+      showActionDoneModal('הדפים סומנו כנלמד.');
+    }
+
+    function renderAllLearnersView() {
+      const content = document.getElementById('all-learners-content');
+      if (!content) return;
+      content.innerHTML = '';
+      if (!selectedAllLearnersKey) {
+        content.innerHTML = '<div class="text-center text-slate-400 py-8">בחר לומד להצגת הפרטים</div>';
+        return;
+      }
+      const user = getUserByKey(selectedAllLearnersKey);
+      if (!user) {
+        content.innerHTML = '<div class="text-center text-slate-400 py-8">הלומד לא נמצא</div>';
+        return;
+      }
+
+      const safeName = escapeHtml(user.name);
+      const safePhone = escapeHtml(user.phone || '');
+      const safeDedication = escapeHtml(user.dedication || '');
+      const profileCard = document.createElement('div');
+      profileCard.className = 'bg-slate-700/50 rounded-xl p-4 border border-slate-600 space-y-3';
+      profileCard.innerHTML = `
+        <h3 class="font-bold text-amber-400">פרטי הרשמה</h3>
+        <div class="grid sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-sm text-slate-300 mb-1">שם</label>
+            <input id="all-learner-name" type="text" value="${safeName}" class="w-full bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-white focus:border-amber-500 focus:outline-none">
+          </div>
+          <div>
+            <label class="block text-sm text-slate-300 mb-1">טלפון</label>
+            <input id="all-learner-phone" type="tel" inputmode="numeric" value="${safePhone}" placeholder="אפשר להשאיר ריק / להוסיף" class="w-full bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-white focus:border-amber-500 focus:outline-none">
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm text-slate-300 mb-1">הקדשה / הערה</label>
+          <textarea id="all-learner-dedication" rows="2" class="w-full bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-white focus:border-amber-500 focus:outline-none resize-none">${safeDedication}</textarea>
+        </div>
+        <button type="button" onclick="saveAllLearnerDetails()" class="w-full bg-slate-600 hover:bg-slate-500 text-white font-semibold py-2 px-4 rounded-xl transition-all">שמור פרטים</button>
+      `;
+      content.appendChild(profileCard);
+
+      const quickCard = document.createElement('div');
+      quickCard.className = 'bg-slate-700/50 rounded-xl p-4 border border-slate-600 space-y-3';
+      quickCard.innerHTML = `
+        <h3 class="font-bold text-amber-400">הוספה מהירה של דפים פנויים</h3>
+        <div class="grid sm:grid-cols-3 gap-2">
+          <select id="all-quick-masechet" onchange="updateAllLearnersQuickAddOptions()" class="bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-white">
+            ${MASECHOT_DATA.map(m => `<option value="${m.name}">${m.name}</option>`).join('')}
+          </select>
+          <select id="all-quick-from" class="bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-white"></select>
+          <select id="all-quick-to" class="bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-white"></select>
+        </div>
+        <button type="button" onclick="quickAddForAllLearner()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-2 px-4 rounded-xl transition-all">הוסף דפים</button>
+      `;
+      content.appendChild(quickCard);
+      updateAllLearnersQuickAddOptions();
+
+      const grouped = {};
+      user.records.forEach(record => {
+        if (!grouped[record.masechet]) {
+          grouped[record.masechet] = [];
+        }
+        grouped[record.masechet].push(record);
+      });
+      const orderIndex = new Map(MASECHOT_DATA.map((m, index) => [m.name, index]));
+      const sortedMasechot = Object.keys(grouped).sort((a, b) => (orderIndex.get(a) ?? 999) - (orderIndex.get(b) ?? 999));
+
+      sortedMasechot.forEach(masechet => {
+        const safeMasechet = escapeHtml(masechet);
+        const card = document.createElement('div');
+        card.className = 'bg-slate-700/50 rounded-xl p-4 border border-slate-600 space-y-2';
+        const rows = grouped[masechet]
+          .slice()
+          .sort((a, b) => a.daf - b.daf)
+          .map(record => {
+            const start = formatDafNumber(record.daf);
+            const endRaw = record.daf_end ?? record.daf;
+            const end = formatDafNumber(endRaw);
+            const batchText = record.daf === endRaw ? `${start}` : `${start} עד ${end}`;
+            return `
+              <div class="bg-slate-600/50 rounded-lg p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div>
+                  <div class="font-semibold text-white">${safeMasechet}</div>
+                  <div class="text-sm text-slate-300">אצווה: ${batchText}</div>
+                  <div class="text-xs ${record.learned ? 'text-emerald-400' : 'text-blue-300'}">${record.learned ? 'נלמד' : 'משובץ'}</div>
+                </div>
+                <div class="flex gap-2">
+                  <button type="button" onclick="markAllLearnerBatchRead(${record.id})" class="px-2 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs transition-all">סמן כנלמד</button>
+                  <button type="button" onclick="deleteAllLearnerBatch(${record.id})" class="px-2 py-1 bg-red-600 hover:bg-red-500 text-white rounded text-xs transition-all">מחק</button>
+                </div>
+              </div>
+            `;
+          }).join('');
+        card.innerHTML = `<h3 class="font-bold text-amber-400">${safeMasechet}</h3>${rows}`;
+        content.appendChild(card);
+      });
+    }
+
     // ========== NAVIGATION ==========
     function goHome() {
       currentMasechet = null;
       document.getElementById('home-screen').classList.remove('hidden');
       document.getElementById('masechet-screen').classList.add('hidden');
       document.getElementById('my-pages-screen').classList.add('hidden');
+      document.getElementById('all-learners-screen').classList.add('hidden');
       renderMasechotList();
     }
 
@@ -828,6 +1286,7 @@
       document.getElementById('home-screen').classList.add('hidden');
       document.getElementById('masechet-screen').classList.remove('hidden');
       document.getElementById('my-pages-screen').classList.add('hidden');
+      document.getElementById('all-learners-screen').classList.add('hidden');
       renderMasechetScreen();
     }
 
@@ -835,7 +1294,17 @@
       document.getElementById('home-screen').classList.add('hidden');
       document.getElementById('masechet-screen').classList.add('hidden');
       document.getElementById('my-pages-screen').classList.remove('hidden');
+      document.getElementById('all-learners-screen').classList.add('hidden');
       renderMyPages();
+    }
+
+    function openAllLearners() {
+      document.getElementById('home-screen').classList.add('hidden');
+      document.getElementById('masechet-screen').classList.add('hidden');
+      document.getElementById('my-pages-screen').classList.add('hidden');
+      document.getElementById('all-learners-screen').classList.remove('hidden');
+      renderAllLearnersSelect();
+      renderAllLearnersView();
     }
 
     // ========== MODALS ==========
@@ -856,7 +1325,7 @@
     }
 
     function openDafModal(masechet, daf) {
-      const assignment = myAssignments.find(a => a.masechet === masechet && a.daf === daf);
+      const assignment = getAssignment(masechet, daf);
       const status = getDafStatus(masechet, daf);
       
       if (status === 'free') {
@@ -874,11 +1343,20 @@
           <div class="p-6">
             <h3 class="text-lg font-bold text-amber-400 mb-2">${masechet} דף ${formatDafNumber(daf)}</h3>
             <div class="bg-slate-700/50 rounded-xl p-4 mb-4">
+              <p class="font-semibold text-white mb-1">${assignment.name}</p>
+              ${assignment.dedication ? `<p class="text-slate-400 text-sm">${assignment.dedication}</p>` : ''}
               <p class="text-sm mt-2 ${status === 'learned' ? 'text-emerald-400' : 'text-blue-400'}">
                 ${status === 'learned' ? '✓ נלמד' : 'משובץ'}
               </p>
             </div>
-            <p class="text-slate-400 text-sm">לעריכה ומחיקה יש להיכנס ל"הדפים שלי" ולאמת מספר טלפון.</p>
+            <div class="space-y-2">
+              <button onclick="openEditForm('${masechet}', ${daf})" class="w-full bg-slate-600 hover:bg-slate-500 text-white font-semibold py-3 px-4 rounded-xl transition-all">
+                ערוך פרטים
+              </button>
+              <button onclick="confirmDelete('${masechet}', ${daf})" class="w-full bg-red-600/20 hover:bg-red-600/30 text-red-400 font-semibold py-3 px-4 rounded-xl transition-all border border-red-600/30">
+                מחק שיבוץ
+              </button>
+            </div>
           </div>
         `);
       }
@@ -1443,10 +1921,6 @@
       const dedication = document.getElementById('assign-dedication').value.trim();
       
       if (isEdit) {
-        if (!verifiedMyPagesPhone) {
-          showToast('יש לאמת מספר טלפון במסך "הדפים שלי"', 'error');
-          return;
-        }
         const assignment = getAssignment(masechet, daf);
         if (!assignment) {
           closeModal({ target: {}, currentTarget: {} });
@@ -1460,18 +1934,27 @@
           showToast('אנא הזן שם', 'error');
           return;
         }
+        const existingByPhone = findExistingUserByPhone(normalizePhone(phone));
+        let resolvedName = name;
+        if (existingByPhone && existingByPhone.name !== name) {
+          const choice = await openPhoneConflictModal(existingByPhone.name, name);
+          if (choice !== 'use_existing') {
+            return;
+          }
+          resolvedName = existingByPhone.name;
+        }
         const updateRecord = {
           id: assignment.id,
           masechet: assignment.masechet,
           daf: assignment.range_start ?? assignment.daf,
           daf_end: assignment.range_end ?? getRangeEnd(assignment),
-          name,
+          name: resolvedName,
           phone: normalizePhone(phone),
           dedication: dedication,
           learned: assignment.learned,
           is_full_masechet: assignment.is_full_masechet
         };
-        const result = await window.dataSdk.update(updateRecord, { authPhone: verifiedMyPagesPhone });
+        const result = await window.dataSdk.update(updateRecord);
         if (result.isOk) {
           closeModal({ target: {}, currentTarget: {} });
           showActionDoneModal('הפרטים עודכנו.');
@@ -1503,10 +1986,6 @@
     }
 
     async function toggleLearnedModal(masechet, daf) {
-      if (!verifiedMyPagesPhone) {
-        showToast('יש לאמת טלפון במסך "הדפים שלי"', 'error');
-        return;
-      }
       const assignment = getAssignment(masechet, daf);
       if (assignment) {
         const nextLearned = !assignment.learned;
@@ -1514,11 +1993,11 @@
           id: assignment.id,
           learned: nextLearned,
           target_daf: daf
-        }, { authPhone: verifiedMyPagesPhone });
+        });
         if (result.isOk) {
           closeModal({ target: {}, currentTarget: {} });
           showActionDoneModal(nextLearned ? 'הדף סומן כנלמד.' : 'סימון נלמד בוטל.');
-          await refreshMyAssignmentsData();
+          renderMasechetScreen();
         } else {
           showToast('שגיאה בעדכון', 'error');
           closeModal({ target: {}, currentTarget: {} });
@@ -1527,7 +2006,7 @@
     }
 
     async function toggleLearned(recordId, targetDaf) {
-      const record = myAssignments.find(a => a.id === recordId && a.daf === targetDaf);
+      const record = assignments.find(a => a.id === recordId && a.daf === targetDaf);
       if (!record) {
         showToast('שיבוץ לא נמצא', 'error');
         return;
@@ -1537,9 +2016,9 @@
         id: record.id,
         learned: nextLearned,
         target_daf: targetDaf
-      }, { authPhone: verifiedMyPagesPhone });
+      });
       if (result.isOk) {
-        await refreshMyAssignmentsData();
+        updateMyPagesView();
         showActionDoneModal(nextLearned ? 'הדף סומן כנלמד.' : 'סימון נלמד בוטל.');
       } else {
         showToast('שגיאה בעדכון', 'error');
@@ -1547,20 +2026,14 @@
     }
 
     async function deleteAssignment(masechet, daf) {
-      if (!verifiedMyPagesPhone) {
-        showToast('יש לאמת טלפון במסך "הדפים שלי"', 'error');
-        return;
-      }
-      const assignment = myAssignments.find(a => a.masechet === masechet && a.daf === daf);
+      const assignment = getAssignment(masechet, daf);
       if (assignment) {
         const result = await window.dataSdk.delete({
           id: assignment.id,
-          target_daf: daf,
-          authPhone: verifiedMyPagesPhone
+          target_daf: daf
         });
         if (result.isOk) {
           closeModal({ target: {}, currentTarget: {} });
-          await refreshMyAssignmentsData();
           showActionDoneModal('השיבוץ נמחק.');
         } else {
           showToast('שגיאה במחיקה', 'error');
@@ -1584,19 +2057,21 @@
     }
 
     async function deleteMasechetAssignments(name, masechet) {
-      const toDelete = myAssignments.filter(record => record.masechet === masechet);
+      const toDelete = assignmentRanges.filter(
+        record => record.name === name && record.masechet === masechet
+      );
       if (toDelete.length === 0) {
         showToast('שיבוץ לא נמצא', 'error');
         return false;
       }
       for (const record of toDelete) {
-        const result = await window.dataSdk.delete({ id: record.id, authPhone: verifiedMyPagesPhone });
+        const result = await window.dataSdk.delete({ id: record.id });
         if (!result.isOk) {
           showToast('שגיאה במחיקה', 'error');
           return false;
         }
       }
-      await refreshMyAssignmentsData();
+      updateMyPagesView();
       return true;
     }
 
@@ -1634,8 +2109,8 @@
       let deleted = false;
 
       for (let daf = rangeStart; daf <= rangeEnd; daf++) {
-        const assignment = myAssignments.find(
-          record => record.masechet === masechet && record.daf === daf
+        const assignment = assignments.find(
+          record => record.name === name && record.masechet === masechet && record.daf === daf
         );
         if (!assignment) {
           continue;
@@ -1643,8 +2118,7 @@
         deleted = true;
         const result = await window.dataSdk.delete({
           id: assignment.id,
-          target_daf: daf,
-          authPhone: verifiedMyPagesPhone
+          target_daf: daf
         });
         if (!result.isOk) {
           showToast('שגיאה במחיקה', 'error');
@@ -1656,7 +2130,7 @@
         showToast('אין דפים למחיקה', 'error');
         return false;
       }
-      await refreshMyAssignmentsData();
+      updateMyPagesView();
       return true;
     }
 
@@ -1665,8 +2139,8 @@
       const rangeEnd = Math.max(start, end);
       let updated = false;
       for (let daf = rangeStart; daf <= rangeEnd; daf++) {
-        const assignment = myAssignments.find(
-          record => record.masechet === masechet && record.daf === daf
+        const assignment = assignments.find(
+          record => record.name === name && record.masechet === masechet && record.daf === daf
         );
         if (!assignment || assignment.learned) {
           continue;
@@ -1675,7 +2149,7 @@
           id: assignment.id,
           learned: true,
           target_daf: daf
-        }, { authPhone: verifiedMyPagesPhone });
+        });
         if (!result.isOk) {
           showToast('שגיאה בעדכון', 'error');
           return false;
@@ -1686,7 +2160,7 @@
         showToast('אין דפים לעדכון', 'error');
         return false;
       }
-      await refreshMyAssignmentsData();
+      updateMyPagesView();
       return true;
     }
 
@@ -1706,6 +2180,10 @@
         renderMasechotList();
         if (currentMasechet) {
           renderMasechetScreen();
+        }
+        if (!document.getElementById('all-learners-screen').classList.contains('hidden')) {
+          renderAllLearnersSelect();
+          renderAllLearnersView();
         }
       }
     };
@@ -1795,14 +2273,9 @@
           return { isOk: false };
         }
         try {
-          const headers = { 'Content-Type': 'application/json' };
-          const authPhone = normalizePhone(options.authPhone || verifiedMyPagesPhone);
-          if (authPhone) {
-            headers['X-User-Phone'] = authPhone;
-          }
           const response = await fetch(`/api/assignments/${record.id}`, {
             method: 'PUT',
-            headers,
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(record)
           });
           if (!response.ok) {
@@ -1827,14 +2300,8 @@
           const url = (targetDaf !== undefined && targetDaf !== null)
             ? `/api/assignments/${record.id}?daf=${encodeURIComponent(targetDaf)}`
             : `/api/assignments/${record.id}`;
-          const headers = {};
-          const authPhone = normalizePhone(record?.authPhone || verifiedMyPagesPhone);
-          if (authPhone) {
-            headers['X-User-Phone'] = authPhone;
-          }
           const response = await fetch(url, {
-            method: 'DELETE',
-            headers
+            method: 'DELETE'
           });
           if (!response.ok) {
             logHttpError('Delete assignment', response);
@@ -1855,6 +2322,9 @@
     window.dataSdk.init(dataHandler).then(result => {
       if (!result.isOk) {
         console.error("Failed to initialize data");
+      }
+      if (window.location.pathname === '/dafdaf') {
+        openAllLearners();
       }
     });
   </script>

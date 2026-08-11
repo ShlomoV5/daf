@@ -11,6 +11,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 BASE_DIR = Path(__file__).resolve().parent
 HTML_PATH = BASE_DIR / "base.html"
+ADMIN_HTML_PATH = BASE_DIR / "admin.html"
 DB_PATH = os.environ.get("DB_PATH", str(BASE_DIR / "assignments.db"))
 MAX_CONTENT_LENGTH = 1_000_000
 BACKUP_PASSWORD = os.environ.get("BACKUP_PASSWORD", "123123")
@@ -62,6 +63,44 @@ class AssignmentStore:
             rows = cursor.fetchall()
         return [self._row_to_dict(row) for row in rows]
 
+    def list_assignments_public(self) -> list[dict]:
+        records = self.list_assignments()
+        return [
+            {
+                "masechet": record["masechet"],
+                "daf": record["daf"],
+                "daf_end": record["daf_end"],
+                "learned": record["learned"],
+                "is_full_masechet": record["is_full_masechet"],
+            }
+            for record in records
+        ]
+
+    def list_assignments_by_phone(self, phone: str) -> list[dict]:
+        with self._get_connection() as connection:
+            cursor = connection.execute(
+                "SELECT id, masechet, daf, daf_end, name, phone, dedication, learned, is_full_masechet FROM assignments "
+                "WHERE phone = ? ORDER BY masechet, daf",
+                (phone,),
+            )
+            rows = cursor.fetchall()
+        return [self._row_to_dict(row) for row in rows]
+
+    def get_identity_by_phone(self, phone: str) -> dict | None:
+        with self._get_connection() as connection:
+            cursor = connection.execute(
+                "SELECT name, phone, dedication FROM assignments WHERE phone = ? ORDER BY id LIMIT 1",
+                (phone,),
+            )
+            row = cursor.fetchone()
+        if not row:
+            return None
+        return {
+            "name": row["name"] or "",
+            "phone": row["phone"] or "",
+            "dedication": row["dedication"] or "",
+        }
+
     def get_assignment(self, assignment_id: int) -> dict | None:
         with self._get_connection() as connection:
             cursor = connection.execute(
@@ -80,6 +119,7 @@ class AssignmentStore:
         if not payloads or not isinstance(payloads, list):
             raise ValueError("Missing required fields")
         records = [self._parse_payload(payload, require_fields=True) for payload in payloads]
+        records = [self._apply_existing_identity(record) for record in records]
         self._validate_payload_ranges(records)
         assignment_ids = []
         with self._get_connection() as connection:
@@ -106,6 +146,20 @@ class AssignmentStore:
                 )
                 assignment_ids.append(cursor.lastrowid)
         return self._get_assignments_by_ids(assignment_ids)
+
+    def _apply_existing_identity(self, record: dict) -> dict:
+        phone = self.normalize_phone(record.get("phone"))
+        if not phone:
+            return record
+        existing = self.get_identity_by_phone(phone)
+        if not existing:
+            return {**record, "phone": phone}
+        return {
+            **record,
+            "name": existing.get("name") or record.get("name") or "",
+            "phone": phone,
+            "dedication": existing.get("dedication") or record.get("dedication") or "",
+        }
 
     def update_assignment(self, assignment_id: int, payload: dict) -> dict | None:
         existing = self.get_assignment(assignment_id)
@@ -372,7 +426,7 @@ class AssignmentStore:
 
         masechet = str(masechet).strip() if masechet is not None else ""
         name = str(name).strip() if name is not None else ""
-        phone = str(phone).strip() if phone is not None else ""
+        phone = AssignmentStore.normalize_phone(phone)
         if payload and "dedication" in payload:
             dedication = payload.get("dedication")
         else:
@@ -414,6 +468,12 @@ class AssignmentStore:
             "is_full_masechet": bool(is_full_masechet),
         }
 
+    @staticmethod
+    def normalize_phone(phone: str | None) -> str:
+        if phone is None:
+            return ""
+        return "".join(ch for ch in str(phone).strip() if ch.isdigit())
+
 
 store = AssignmentStore(DB_PATH)
 
@@ -428,13 +488,23 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._serve_html()
             return
         if path == "/api/assignments":
-            self._send_json(store.list_assignments())
+            if self._is_backup_authorized():
+                self._send_json(store.list_assignments())
+            else:
+                self._send_json(store.list_assignments_public())
+            return
+        if path == "/api/my-assignments":
+            phone = self._get_verified_phone()
+            if not phone:
+                self._send_json({"error": "Phone is required"}, status=400)
+                return
+            self._send_json(store.list_assignments_by_phone(phone))
             return
         if path == "/api/calendar/ics":
             self._serve_ics(parsed)
             return
         if path == "/dafdaf":
-            self._serve_html()
+            self._serve_admin_html()
             return
         if path == "/dafdaf/export":
             self._serve_backup_export()
@@ -491,6 +561,8 @@ class RequestHandler(BaseHTTPRequestHandler):
         if payload is None:
             self._send_json({"error": "Invalid JSON"}, status=400)
             return
+        if not self._authorize_assignment_change(assignment_id, payload):
+            return
         try:
             target_daf = None
             if isinstance(payload, dict):
@@ -504,6 +576,13 @@ class RequestHandler(BaseHTTPRequestHandler):
                     assignment_id, target_value, bool(payload.get("learned"))
                 )
             else:
+                if not self._is_backup_authorized() and "phone" in payload:
+                    payload = dict(payload)
+                    existing = store.get_assignment(assignment_id)
+                    if not existing:
+                        self._send_json({"error": "Assignment not found"}, status=404)
+                        return
+                    payload["phone"] = existing.get("phone", "")
                 record = store.update_assignment(assignment_id, payload)
         except ValueError:
             self._send_json({"error": "Invalid payload"}, status=400)
@@ -525,6 +604,8 @@ class RequestHandler(BaseHTTPRequestHandler):
         if assignment_id is None:
             self._send_json({"error": "Invalid assignment id"}, status=400)
             return
+        if not self._authorize_assignment_change(assignment_id):
+            return
         params = parse_qs(parsed.query)
         target_daf = self._parse_int_param(params, "daf")
         if "daf" in params and target_daf is None:
@@ -544,6 +625,19 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.send_error(404, "Not Found")
             return
         content = HTML_PATH.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(content)))
+        self.end_headers()
+        self.wfile.write(content)
+
+    def _serve_admin_html(self) -> None:
+        if not self._require_backup_auth():
+            return
+        if not ADMIN_HTML_PATH.exists():
+            self.send_error(404, "Not Found")
+            return
+        content = ADMIN_HTML_PATH.read_bytes()
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(content)))
@@ -790,6 +884,32 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.send_header("WWW-Authenticate", 'Basic realm="Daf Backup"')
         self.end_headers()
         return False
+
+    def _get_verified_phone(self) -> str:
+        phone = self.headers.get("X-User-Phone", "")
+        return store.normalize_phone(phone)
+
+    def _authorize_assignment_change(self, assignment_id: int, payload: dict | None = None) -> bool:
+        if self._is_backup_authorized():
+            return True
+        assignment = store.get_assignment(assignment_id)
+        if not assignment:
+            self._send_json({"error": "Assignment not found"}, status=404)
+            return False
+        verified_phone = self._get_verified_phone()
+        if not verified_phone:
+            if isinstance(payload, dict):
+                candidate_phone = store.normalize_phone(payload.get("phone"))
+                if candidate_phone:
+                    verified_phone = candidate_phone
+        owner_phone = store.normalize_phone(assignment.get("phone"))
+        if not verified_phone:
+            self._send_json({"error": "Phone is required"}, status=400)
+            return False
+        if verified_phone != owner_phone:
+            self._send_json({"error": "Forbidden"}, status=403)
+            return False
+        return True
 
     @staticmethod
     def _parse_date_param(params: dict, key: str, default_value: date) -> date:
