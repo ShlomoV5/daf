@@ -1552,18 +1552,20 @@
           return;
         }
         const existingByPhone = findExistingUserByPhone(normalizePhone(phone));
+        let resolvedName = name;
         if (existingByPhone && existingByPhone.name !== name) {
           const choice = await openPhoneConflictModal(existingByPhone.name, name);
           if (choice !== 'use_existing') {
             return;
           }
+          resolvedName = existingByPhone.name;
         }
         const updateRecord = {
           id: assignment.id,
           masechet: assignment.masechet,
           daf: assignment.range_start ?? assignment.daf,
           daf_end: assignment.range_end ?? getRangeEnd(assignment),
-          name: name,
+          name: resolvedName,
           phone: normalizePhone(phone),
           dedication: dedication,
           learned: assignment.learned,
@@ -1751,7 +1753,7 @@
           id: assignment.id,
           learned: true,
           target_daf: daf
-        }, { skipRefresh: true });
+        });
         if (!result.isOk) {
           showToast('שגיאה בעדכון', 'error');
           return;
@@ -1762,7 +1764,6 @@
         showToast('אין דפים לעדכון', 'error');
         return;
       }
-      await refreshAssignments();
       showToast('הדפים סומנו כנלמד');
       updateMyPagesView();
     }
