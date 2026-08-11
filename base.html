@@ -93,7 +93,7 @@
       background: rgba(51, 65, 85, 0.9);
       border-color: rgba(100, 116, 139, 0.9);
     }
-    .worm-cell--free {
+    .worm-cell.worm-cell--free {
       background: var(--seder-color-soft);
       border-color: var(--seder-border-color);
     }
@@ -1206,11 +1206,11 @@
                 const st = getDafStatus(item.masechet, item.daf);
                 const isSelected = selected.has(`${item.masechet}|${item.daf}`);
                 let className = `worm-pixel worm-cell ${color.theme}`;
-                if (st === 'learned') className += ' worm-cell--learned';
+                if (isSelected) className += ' worm-cell--selected';
+                else if (st === 'learned') className += ' worm-cell--learned';
                 else if (st === 'assigned') className += ' worm-cell--assigned';
                 else className += ' worm-cell--free';
-                if (isSelected) className += ' worm-cell--selected';
-                else if (item.isStart) className += ' worm-cell--start';
+                if (!isSelected && item.isStart) className += ' worm-cell--start';
                 return (
                   <button
                     key={`${item.masechet}|${item.daf}`}
