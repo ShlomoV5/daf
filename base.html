@@ -146,6 +146,10 @@
     return { ...r, daf_end: r.daf_end ?? r.daf, phone: r.phone||'', learned: Boolean(r.learned), is_full_masechet: Boolean(r.is_full_masechet) };
   }
 
+  function normalizeMyAssignments(records) {
+    return expandAssignments((records || []).map(normalizeRecord));
+  }
+
   function formatIcsDate(d) {
     return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
   }
@@ -344,6 +348,7 @@
   // ─── ICONS ───────────────────────────────────────────────────────────────────
   const IcUser    = ()=><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0"/></svg>;
   const IcBack    = ()=><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3"/></svg>;
+  const IcForward = ()=><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18"/></svg>;
   const IcEdit    = ()=><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Z"/></svg>;
   const IcTrash   = ()=><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"/></svg>;
   const IcCheck   = ()=><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m4.5 12.75 6 6 9-13.5"/></svg>;
@@ -697,10 +702,11 @@
       try {
         const res=await fetch('/api/my-assignments',{headers:{'X-User-Phone':p}});
         if (!res.ok) { showToast('אימות נכשל','error'); setLoading(false); return; }
-        const data=await res.json();
-        G.myAssignments=data.map(normalizeRecord);
+        const data=normalizeMyAssignments(await res.json());
+        if (!data.length) { showToast('אינך רשום עדיין','error'); setLoading(false); return; }
+        G.myAssignments=data;
         G.verifiedPhone=p;
-        onVerified(p, G.myAssignments);
+        onVerified(p, data);
       } catch(e) { showToast('שגיאה','error'); setLoading(false); }
     };
     return (
@@ -794,7 +800,7 @@
           <button onClick={()=>navigate('shasmap')} className="text-right bg-slate-700/50 border border-slate-600 hover:border-amber-500/50 rounded-2xl p-5 transition-all space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-bold text-white">מפת הש״ס</h2>
-              <span className="text-xs text-amber-400 flex items-center gap-1">למפה <IcBack /></span>
+              <span className="text-xs text-amber-400 flex items-center gap-1">למפה <IcForward /></span>
             </div>
             <div className="grid grid-cols-3 gap-2 text-center">
               {[
@@ -842,7 +848,7 @@
   };
 
   // ─── SHAS MAP VIEW ────────────────────────────────────────────────────────────
-  const ShasMapView = ({ navigate, assignments, selectionMode=false }) => {
+  const ShasMapView = ({ navigate, assignments, selectionMode=false, returnTo='home' }) => {
     const [assignTarget,setAssignTarget]=React.useState(null); // {masechet,daf}
     const [viewTarget,setViewTarget]=React.useState(null); // {masechet,daf,assignment}
     const [masechetTarget,setMasechetTarget]=React.useState(null);
@@ -941,8 +947,8 @@
         {/* Header */}
         <div className="bg-slate-800/95 border-b border-slate-700 z-40 flex-shrink-0">
           <div className="max-w-full px-4 py-3 flex items-center justify-between">
-            <button onClick={()=>navigate('home')} className="flex items-center gap-2 text-amber-400 hover:text-amber-300 transition-colors text-sm font-medium">
-              <IcBack /> ראשי
+            <button onClick={()=>navigate(returnTo)} className="flex items-center gap-2 text-amber-400 hover:text-amber-300 transition-colors text-sm font-medium">
+              <IcBack /> {returnTo==='mypages' ? 'הדפים שלי' : 'ראשי'}
             </button>
             <h2 className="text-lg font-bold text-white">מפת הש״ס</h2>
             <div className="flex flex-wrap gap-x-3 gap-y-1 justify-end text-xs">
@@ -1088,16 +1094,16 @@
             </div>
           </Modal>
         )}
-        {success && <SuccessModal name={success.name} assignments={success.recs} onClose={()=>{ setSuccess(null); if (selectionMode) navigate('home'); }} />}
+        {success && <SuccessModal name={success.name} assignments={success.recs} onClose={()=>{ setSuccess(null); if (selectionMode) navigate(returnTo); }} />}
       </div>
     );
   };
 
   // ─── MY PAGES VIEW ────────────────────────────────────────────────────────────
   const MyPagesView = ({ navigate }) => {
-    const [showVerify,setShowVerify]=React.useState(true);
+    const [showVerify,setShowVerify]=React.useState(!G.verifiedPhone);
     const [myData,setMyData]=React.useState([]);
-    const [verifiedPhone,setVerifiedPhone]=React.useState('');
+    const [verifiedPhone,setVerifiedPhone]=React.useState(G.verifiedPhone || '');
     const [editMode,setEditMode]=React.useState(false);
     const [selected,setSelected]=React.useState(new Set());
     const [rangeStart,setRangeStart]=React.useState(null);
@@ -1106,15 +1112,34 @@
 
     const refresh = async (phone) => {
       const res=await fetch('/api/my-assignments',{headers:{'X-User-Phone':phone||verifiedPhone}});
-      if (res.ok) { const d=await res.json(); setMyData(d.map(normalizeRecord)); }
+      if (!res.ok) return null;
+      const data=normalizeMyAssignments(await res.json());
+      G.myAssignments=data;
+      setMyData(data);
+      return data;
     };
 
     const onVerified = (phone, data) => {
       setVerifiedPhone(phone);
       G.verifiedPhone=phone;
+      G.myAssignments=data;
       setMyData(data);
       setShowVerify(false);
     };
+
+    React.useEffect(()=>{
+      if (!G.verifiedPhone) return;
+      refresh(G.verifiedPhone).then(data=>{
+        if (!data?.length) {
+          G.verifiedPhone='';
+          setVerifiedPhone('');
+          setShowVerify(true);
+          return;
+        }
+        setVerifiedPhone(G.verifiedPhone);
+        setShowVerify(false);
+      }).catch(()=>{});
+    },[]);
 
     // group by masechet
     const orderIndex = new Map(MASECHOT_DATA.map((m,i)=>[m.name,i]));
@@ -1176,6 +1201,17 @@
       setLoading(false);
     };
 
+    const handleAddPages = () => {
+      if (!verifiedPhone || !myData.length) { showToast('אינך רשום עדיין','error'); return; }
+      const firstRecord = myData[0];
+      G.signupDraft = {
+        name: firstRecord.name || '',
+        phone: verifiedPhone,
+        dedication: firstRecord.dedication || '',
+      };
+      navigate('shasmap', { selectionMode:true, returnTo:'mypages' });
+    };
+
     const markRangeLearned = async (masechet, from, to) => {
       setLoading(true);
       const s=Math.min(from,to), en=Math.max(from,to);
@@ -1202,7 +1238,7 @@
             <p className="text-slate-400 text-sm mt-1">מעקב ודיווח על לימוד או הוספה של דפים חדשים</p>
           </div>
           <div className="flex gap-2">
-            <button onClick={()=>navigate('shasmap')} className="bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold px-3 py-1.5 rounded-xl transition-all">+ הוספת דפים</button>
+            <button onClick={handleAddPages} className="bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold px-3 py-1.5 rounded-xl transition-all">+ הוספת דפים</button>
             {!showVerify && myData.length>0 && (
               <button onClick={()=>{setEditMode(!editMode);setSelected(new Set());setRangeStart(null);}}
                 className={`flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-xl border transition-all ${editMode?'bg-amber-600 border-amber-500 text-white':'bg-slate-700 border-slate-600 text-slate-300 hover:text-white'}`}>
@@ -1348,7 +1384,7 @@
       <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800">
         <Header config={config} navigate={navigate} />
         {viewState.name==='home' && <Dashboard navigate={navigate} assignments={assignments} totalAssigned={totalAssigned} totalLearned={totalLearned} />}
-        {viewState.name==='shasmap' && <ShasMapView navigate={navigate} assignments={assignments} selectionMode={Boolean(viewState.selectionMode)} />}
+        {viewState.name==='shasmap' && <ShasMapView navigate={navigate} assignments={assignments} selectionMode={Boolean(viewState.selectionMode)} returnTo={viewState.returnTo || 'home'} />}
         {viewState.name==='mypages' && <MyPagesView navigate={navigate} />}
       </div>
     );
