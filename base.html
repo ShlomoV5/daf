@@ -898,6 +898,20 @@
     const pctLearned = totalLearned/TOTAL_DAFIM*100;
 
     React.useLayoutEffect(() => {
+      const estimateRows = cols => {
+        let rows = 1;
+        let used = 0;
+        mapEntries.forEach(item => {
+          const span = Math.min(item.span || 1, cols);
+          if (used && used + span > cols) {
+            rows += 1;
+            used = 0;
+          }
+          used += span;
+          if (used === cols) used = 0;
+        });
+        return rows;
+      };
       const updateLayout = () => {
         const el = mapAreaRef.current;
         if (!el) return;
@@ -908,7 +922,7 @@
         let best = { cell:2, cols:Math.max(MASECHET_LABEL_SPAN, Math.min(totalMapUnits, Math.floor(width / 3))), gap };
         const maxCols = Math.max(MASECHET_LABEL_SPAN, Math.min(totalMapUnits, width));
         for (let cols = MASECHET_LABEL_SPAN; cols <= maxCols; cols += 1) {
-          const rows = Math.ceil(totalMapUnits / cols);
+          const rows = estimateRows(cols);
           const cell = Math.floor(
             Math.min(
               (width - gap * Math.max(0, cols - 1)) / cols,
@@ -928,7 +942,7 @@
       updateLayout();
       window.addEventListener('resize', updateLayout);
       return () => window.removeEventListener('resize', updateLayout);
-    }, [totalMapUnits, selectionMode]);
+    }, [mapEntries, totalMapUnits, selectionMode]);
 
     const resetSelection = () => {
       setSelected(new Set());
