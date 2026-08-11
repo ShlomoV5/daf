@@ -94,6 +94,7 @@
   ];
   const TOTAL_DAFIM = 2711;
   const MAX_DAFIM = Math.max(...MASECHOT_DATA.map(m => m.dafim));
+  const MASECHET_LABEL_SPAN = 5;
 
   const SEDER_COLORS = {
     'זרעים':  { bg:'bg-emerald-600', hover:'hover:bg-emerald-500', hex:'#059669' },
@@ -866,16 +867,28 @@
     const mapAreaRef = React.useRef(null);
     const [mapLayout,setMapLayout]=React.useState({ cell:6, cols:60, gap:1 });
     const signupIdentity = G.signupDraft;
-    const flatPages = React.useMemo(
-      () => MASECHOT_DATA.flatMap(mas =>
-        Array.from({ length:mas.dafim }, (_, i) => ({
+    const mapEntries = React.useMemo(
+      () => MASECHOT_DATA.flatMap(mas => [
+        {
+          type: 'label',
+          masechet: mas.name,
+          seder: mas.seder,
+          span: MASECHET_LABEL_SPAN,
+        },
+        ...Array.from({ length:mas.dafim }, (_, i) => ({
+          type: 'daf',
           masechet: mas.name,
           seder: mas.seder,
           daf: i + 2,
           isStart: i === 0,
-        }))
-      ),
+          span: 1,
+        })),
+      ]),
       []
+    );
+    const totalMapUnits = React.useMemo(
+      () => mapEntries.reduce((sum, item) => sum + (item.span || 1), 0),
+      [mapEntries]
     );
     const totalLearned = React.useMemo(
       () => new Set(assignments.filter(a=>a.learned).map(a=>`${a.masechet}|${a.daf}`)).size,
@@ -892,11 +905,10 @@
         const height = el.clientHeight;
         if (!width || !height) return;
         const gap = 1;
-        const totalCells = flatPages.length;
-        let best = { cell:2, cols:Math.max(1, Math.min(totalCells, Math.floor(width / 3))), gap };
-        const maxCols = Math.max(1, Math.min(totalCells, width));
-        for (let cols = 1; cols <= maxCols; cols += 1) {
-          const rows = Math.ceil(totalCells / cols);
+        let best = { cell:2, cols:Math.max(MASECHET_LABEL_SPAN, Math.min(totalMapUnits, Math.floor(width / 3))), gap };
+        const maxCols = Math.max(MASECHET_LABEL_SPAN, Math.min(totalMapUnits, width));
+        for (let cols = MASECHET_LABEL_SPAN; cols <= maxCols; cols += 1) {
+          const rows = Math.ceil(totalMapUnits / cols);
           const cell = Math.floor(
             Math.min(
               (width - gap * Math.max(0, cols - 1)) / cols,
@@ -916,7 +928,7 @@
       updateLayout();
       window.addEventListener('resize', updateLayout);
       return () => window.removeEventListener('resize', updateLayout);
-    }, [flatPages.length, selectionMode]);
+    }, [totalMapUnits, selectionMode]);
 
     const resetSelection = () => {
       setSelected(new Set());
@@ -1052,12 +1064,38 @@
               style={{
                 width:'fit-content',
                 maxWidth:'100%',
+                gridAutoFlow:'row dense',
                 gridTemplateColumns:`repeat(${mapLayout.cols}, ${mapLayout.cell}px)`,
                 gap:`${mapLayout.gap}px`,
               }}
             >
-              {flatPages.map(item=>{
+              {mapEntries.map(item=>{
                 const color = SEDER_COLORS[item.seder];
+                if (item.type === 'label') {
+                  return (
+                    <button
+                      key={`label|${item.masechet}`}
+                      onClick={()=>setMasechetTarget(item.masechet)}
+                      title={`מסכת ${item.masechet}`}
+                      aria-label={`מסכת ${item.masechet}`}
+                      className="worm-pixel flex items-center justify-center overflow-hidden border font-bold text-slate-100"
+                      style={{
+                        height:`${mapLayout.cell}px`,
+                        gridColumn:`span ${item.span} / span ${item.span}`,
+                        borderRadius:`${Math.max(2, Math.floor(mapLayout.cell / 3))}px`,
+                        backgroundColor:color.hex,
+                        borderColor:`${color.hex}cc`,
+                        fontSize:`${Math.max(7, Math.min(11, mapLayout.cell * 0.9))}px`,
+                        lineHeight:1,
+                        padding:'0 2px',
+                        whiteSpace:'nowrap',
+                        textOverflow:'ellipsis',
+                      }}
+                    >
+                      {item.masechet}
+                    </button>
+                  );
+                }
                 const st = getDafStatus(item.masechet, item.daf);
                 const isSelected = selected.has(`${item.masechet}|${item.daf}`);
                 let className = 'worm-pixel border';
