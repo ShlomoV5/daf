@@ -250,7 +250,6 @@
   };
 
   // ─── TOAST ───────────────────────────────────────────────────────────────────
-  let _toastRoot = null;
   function showToast(msg, type='success') {
     const c = document.getElementById('toast-container');
     if (!c) return;
@@ -545,7 +544,7 @@
   };
 
   // ─── RANGE ASSIGN MODAL ───────────────────────────────────────────────────────
-  const RangeAssignModal = ({ onClose, onSuccess }) => {
+  const RangeAssignModal = ({ onClose, onSuccess, assignments }) => {
     const [masechet,setMasechet]=React.useState(MASECHOT_DATA[0].name);
     const [name,setName]=React.useState('');
     const [phone,setPhone]=React.useState('');
@@ -555,7 +554,7 @@
     const [pending,setPending]=React.useState(null);
     const [loading,setLoading]=React.useState(false);
 
-    const freeDafim = React.useMemo(()=>getFreeDafim(masechet),[masechet,G.assignments.length]);
+    const freeDafim = React.useMemo(()=>getFreeDafim(masechet),[masechet,assignments]);
 
     React.useEffect(()=>{ if(freeDafim.length){ setFromDaf(freeDafim[0]); setToDaf(freeDafim[freeDafim.length-1]); } },[masechet]);
 
@@ -718,12 +717,9 @@
   const Dashboard = ({ navigate, assignments, totalAssigned, totalLearned }) => {
     const [modal,setModal]=React.useState(null); // 'auto'|'range'
     const [success,setSuccess]=React.useState(null);
-    const [formName,setFormName]=React.useState('');
-    const [formPhone,setFormPhone]=React.useState('');
-    const [formDedication,setFormDedication]=React.useState('');
 
     const pctLearned = totalLearned/TOTAL_DAFIM*100;
-    const pctAssigned = (totalAssigned)/TOTAL_DAFIM*100;
+    const pctAssigned = (totalAssigned-totalLearned)/TOTAL_DAFIM*100;
 
     const handleSuccess = (name, recs) => { setModal(null); setSuccess({name,recs}); };
 
@@ -756,22 +752,9 @@
         </div>
 
         {/* Signup / Assign card */}
-        <div className="bg-slate-700/50 border border-slate-600 rounded-2xl p-5 space-y-4">
+        <div className="bg-slate-700/50 border border-slate-600 rounded-2xl p-5 space-y-3">
           <h2 className="text-lg font-bold text-amber-400">הצטרפות לסיום הש״ס</h2>
-          <div className="space-y-3">
-            <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1">שם</label>
-              <input type="text" value={formName} onChange={e=>setFormName(e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded-xl px-3 py-2 text-white text-sm focus:border-amber-500 focus:outline-none" placeholder="שם מלא" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1">טלפון</label>
-              <input type="tel" inputMode="numeric" value={formPhone} onChange={e=>setFormPhone(e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded-xl px-3 py-2 text-white text-sm focus:border-amber-500 focus:outline-none" placeholder="05XXXXXXXX" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1">הקדשה / הערה</label>
-              <textarea value={formDedication} onChange={e=>setFormDedication(e.target.value)} rows={2} className="w-full bg-slate-800 border border-slate-600 rounded-xl px-3 py-2 text-white text-sm focus:border-amber-500 focus:outline-none resize-none" placeholder="לעילוי נשמת / לרפואה שלמה..." />
-            </div>
-          </div>
+          <p className="text-slate-400 text-sm">בחרו כיצד תרצו להצטרף:</p>
           <div className="grid grid-cols-3 gap-2">
             <button onClick={()=>setModal('auto')} className="flex flex-col items-center gap-1.5 bg-purple-600 hover:bg-purple-500 text-white font-semibold py-3 rounded-xl transition-all text-xs">
               <IcBolt /><span>שבץ אותי</span>
@@ -828,6 +811,7 @@
         {modal==='range' && <RangeAssignModal
           onClose={()=>setModal(null)}
           onSuccess={handleSuccess}
+          assignments={assignments}
         />}
         {success && <SuccessModal name={success.name} assignments={success.recs} onClose={()=>setSuccess(null)} />}
       </div>
@@ -840,9 +824,6 @@
     const [assignTarget,setAssignTarget]=React.useState(null); // {masechet,daf}
     const [viewTarget,setViewTarget]=React.useState(null); // {masechet,daf,assignment}
     const [success,setSuccess]=React.useState(null);
-
-    // Total dafim across all masechot for proportional height calculation
-    const totalDafim = TOTAL_DAFIM;
 
     const handleDafClick = (masechet, daf) => {
       const a = getAssignment(masechet, daf);
