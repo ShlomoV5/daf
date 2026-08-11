@@ -622,6 +622,15 @@
       return [...groups.values()].sort((a, b) => a.name.localeCompare(b.name, 'he'));
     }
 
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
     function getUserByKey(userKey) {
       return getUserGroups().find(group => group.key === userKey) || null;
     }
@@ -1110,6 +1119,7 @@
         showToast('שגיאה בהוספה', 'error');
         return;
       }
+      await refreshAssignments();
       renderAllLearnersSelect();
       renderAllLearnersView();
       showActionDoneModal('הדפים נוספו בהצלחה.');
@@ -1126,6 +1136,7 @@
         showToast('שגיאה במחיקה', 'error');
         return;
       }
+      await refreshAssignments();
       renderAllLearnersSelect();
       renderAllLearnersView();
       showActionDoneModal('השיבוץ נמחק.');
@@ -1172,6 +1183,9 @@
         return;
       }
 
+      const safeName = escapeHtml(user.name);
+      const safePhone = escapeHtml(user.phone || '');
+      const safeDedication = escapeHtml(user.dedication || '');
       const profileCard = document.createElement('div');
       profileCard.className = 'bg-slate-700/50 rounded-xl p-4 border border-slate-600 space-y-3';
       profileCard.innerHTML = `
@@ -1179,16 +1193,16 @@
         <div class="grid sm:grid-cols-2 gap-3">
           <div>
             <label class="block text-sm text-slate-300 mb-1">שם</label>
-            <input id="all-learner-name" type="text" value="${user.name}" class="w-full bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-white focus:border-amber-500 focus:outline-none">
+            <input id="all-learner-name" type="text" value="${safeName}" class="w-full bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-white focus:border-amber-500 focus:outline-none">
           </div>
           <div>
             <label class="block text-sm text-slate-300 mb-1">טלפון</label>
-            <input id="all-learner-phone" type="tel" inputmode="numeric" value="${user.phone || ''}" placeholder="אפשר להשאיר ריק / להוסיף" class="w-full bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-white focus:border-amber-500 focus:outline-none">
+            <input id="all-learner-phone" type="tel" inputmode="numeric" value="${safePhone}" placeholder="אפשר להשאיר ריק / להוסיף" class="w-full bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-white focus:border-amber-500 focus:outline-none">
           </div>
         </div>
         <div>
           <label class="block text-sm text-slate-300 mb-1">הקדשה / הערה</label>
-          <textarea id="all-learner-dedication" rows="2" class="w-full bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-white focus:border-amber-500 focus:outline-none resize-none">${user.dedication || ''}</textarea>
+          <textarea id="all-learner-dedication" rows="2" class="w-full bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-white focus:border-amber-500 focus:outline-none resize-none">${safeDedication}</textarea>
         </div>
         <button type="button" onclick="saveAllLearnerDetails()" class="w-full bg-slate-600 hover:bg-slate-500 text-white font-semibold py-2 px-4 rounded-xl transition-all">שמור פרטים</button>
       `;
