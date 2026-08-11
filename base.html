@@ -164,9 +164,20 @@
 
         <div class="bg-slate-700/50 rounded-xl p-4 mb-4 border border-slate-600">
           <h2 class="text-xl font-bold text-amber-400 mb-3">בחר שם לצפייה בדפים</h2>
-          <select id="names-select" onchange="updateMyPagesView()" class="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-white focus:border-amber-500 focus:outline-none">
+          <select id="names-select" onchange="handleMyPagesNameSelection()" class="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-white focus:border-amber-500 focus:outline-none">
             <option value="">-- בחר שם --</option>
           </select>
+          <div id="my-pages-phone-verification" class="hidden mt-3 space-y-2">
+            <label for="my-pages-phone" class="block text-sm font-medium text-slate-300">אימות טלפון *</label>
+            <div class="flex gap-2">
+              <input type="tel" id="my-pages-phone" inputmode="numeric" placeholder="הזן מספר טלפון"
+                class="flex-1 bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-white focus:border-amber-500 focus:outline-none">
+              <button type="button" onclick="verifyMyPagesPhone()" class="bg-amber-600 hover:bg-amber-500 text-white font-semibold px-4 rounded-xl transition-all">
+                אמת
+              </button>
+            </div>
+            <p class="text-xs text-slate-400">יש להזין את מספר הטלפון של המשתמש כדי לצפות ולערוך.</p>
+          </div>
         </div>
 
         <div id="my-pages-content" class="space-y-4"></div>
@@ -227,6 +238,7 @@
     let assignmentRanges = [];
     let assignments = [];
     let currentMasechet = null;
+    let verifiedMyPagesUser = null;
 
     const defaultConfig = {
       site_title: "מסיימים ש״ס יחד אחים",
@@ -257,6 +269,78 @@
     function formatDafNumber(num) {
       const letters = ['', 'א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ז', 'ח', 'ט', 'י', 'יא', 'יב', 'יג', 'יד', 'טו', 'טז', 'יז', 'יח', 'יט', 'כ', 'כא', 'כב', 'כג', 'כד', 'כה', 'כו', 'כז', 'כח', 'כט', 'ל', 'לא', 'לב', 'לג', 'לד', 'לה', 'לו', 'לז', 'לח', 'לט', 'מ', 'מא', 'מב', 'מג', 'מד', 'מה', 'מו', 'מז', 'מח', 'מט', 'נ', 'נא', 'נב', 'נג', 'נד', 'נה', 'נו', 'נז', 'נח', 'נט', 'ס', 'סא', 'סב', 'סג', 'סד', 'סה', 'סו', 'סז', 'סח', 'סט', 'ע', 'עא', 'עב', 'עג', 'עד', 'עה', 'עו', 'עז', 'עח', 'עט', 'פ', 'פא', 'פב', 'פג', 'פד', 'פה', 'פו', 'פז', 'פח', 'פט', 'צ', 'צא', 'צב', 'צג', 'צד', 'צה', 'צו', 'צז', 'צח', 'צט', 'ק', 'קא', 'קב', 'קג', 'קד', 'קה', 'קו', 'קז', 'קח', 'קט', 'קי', 'קיא', 'קיב', 'קיג', 'קיד', 'קטו', 'קטז', 'קיז', 'קיח', 'קיט', 'קכ', 'קכא', 'קכב', 'קכג', 'קכד', 'קכה', 'קכו', 'קכז', 'קכח', 'קכט', 'קל', 'קלא', 'קלב', 'קלג', 'קלד', 'קלה', 'קלו', 'קלז', 'קלח', 'קלט', 'קם', 'קמא', 'קמב', 'קמג', 'קמד', 'קמה', 'קמו', 'קמז', 'קמח', 'קמט', 'קנ', 'קנא', 'קנב', 'קנג', 'קנד', 'קנה', 'קנו', 'קנז', 'קנח', 'קנט', 'קס', 'קסא', 'קסב', 'קסג', 'קסד', 'קסה', 'קסו', 'קסז', 'קסח', 'קסט', 'קע', 'קעא', 'קעב', 'קעג', 'קעד', 'קעה', 'קעו'];
       return letters[num] || num.toString();
+    }
+
+    function normalizePhone(value) {
+      return String(value || '').replace(/\D/g, '');
+    }
+
+    function isValidPhone(phone) {
+      return /^\d{9,15}$/.test(phone);
+    }
+
+    function findExistingUserByPhone(phone) {
+      if (!phone) return null;
+      return assignmentRanges.find(a => normalizePhone(a.phone) === phone) || null;
+    }
+
+    function openPhoneConflictModal(existingName, enteredName) {
+      return new Promise(resolve => {
+        showModal(`
+          <div class="p-6">
+            <h3 class="text-lg font-bold text-amber-400 mb-3">מספר טלפון כבר קיים</h3>
+            <p class="text-slate-300 text-sm mb-4">
+              מספר הטלפון כבר משויך ל-${existingName}. ניתן להשתמש בפרטים הקיימים או להזין מספר אחר.
+            </p>
+            <div class="space-y-2">
+              <button id="use-existing-phone-btn" type="button" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-3 px-4 rounded-xl transition-all">
+                השתמש בפרטים הקיימים
+              </button>
+              <button id="use-different-phone-btn" type="button" class="w-full bg-slate-600 hover:bg-slate-500 text-white font-semibold py-3 px-4 rounded-xl transition-all">
+                הזן מספר אחר
+              </button>
+            </div>
+            ${enteredName && enteredName !== existingName ? `<p class="text-xs text-slate-400 mt-3">השם שהוזן (${enteredName}) לא יישמר אם תבחר בפרטים הקיימים.</p>` : ''}
+          </div>
+        `);
+        document.getElementById('use-existing-phone-btn').onclick = () => {
+          closeModal({ target: {}, currentTarget: {} });
+          resolve('use_existing');
+        };
+        document.getElementById('use-different-phone-btn').onclick = () => {
+          closeModal({ target: {}, currentTarget: {} });
+          resolve('use_different');
+        };
+      });
+    }
+
+    async function resolveSignupIdentity(name, rawPhone, dedication = '') {
+      const normalizedPhone = normalizePhone(rawPhone);
+      if (!name) {
+        showToast('אנא הזן שם', 'error');
+        return null;
+      }
+      if (!isValidPhone(normalizedPhone)) {
+        showToast('אנא הזן מספר טלפון תקין', 'error');
+        return null;
+      }
+      const existing = findExistingUserByPhone(normalizedPhone);
+      if (!existing) {
+        return { name, phone: normalizedPhone, dedication };
+      }
+      if (existing.name === name) {
+        return { name: existing.name, phone: normalizedPhone, dedication };
+      }
+      const choice = await openPhoneConflictModal(existing.name, name);
+      if (choice !== 'use_existing') {
+        showToast('הזן מספר טלפון אחר ונסה שוב', 'info');
+        return null;
+      }
+      return {
+        name: existing.name,
+        phone: normalizedPhone,
+        dedication: (existing.dedication || dedication || '').trim()
+      };
     }
 
     function formatIcsDate(date) {
@@ -616,6 +700,50 @@
       
       const content = document.getElementById('my-pages-content');
       content.innerHTML = '';
+      verifiedMyPagesUser = null;
+      const verificationPanel = document.getElementById('my-pages-phone-verification');
+      const phoneInput = document.getElementById('my-pages-phone');
+      verificationPanel.classList.add('hidden');
+      phoneInput.value = '';
+    }
+
+    function handleMyPagesNameSelection() {
+      const selectedName = document.getElementById('names-select').value;
+      const content = document.getElementById('my-pages-content');
+      const verificationPanel = document.getElementById('my-pages-phone-verification');
+      const phoneInput = document.getElementById('my-pages-phone');
+      verifiedMyPagesUser = null;
+      content.innerHTML = '';
+      if (!selectedName) {
+        verificationPanel.classList.add('hidden');
+        phoneInput.value = '';
+        return;
+      }
+      verificationPanel.classList.remove('hidden');
+      phoneInput.value = '';
+      phoneInput.focus();
+    }
+
+    function verifyMyPagesPhone() {
+      const selectedName = document.getElementById('names-select').value;
+      const enteredPhone = normalizePhone(document.getElementById('my-pages-phone').value);
+      if (!selectedName) {
+        showToast('בחר שם תחילה', 'error');
+        return;
+      }
+      if (!isValidPhone(enteredPhone)) {
+        showToast('אנא הזן מספר טלפון תקין', 'error');
+        return;
+      }
+      const userAssignments = assignments.filter(a => a.name === selectedName);
+      const isMatch = userAssignments.some(a => normalizePhone(a.phone) === enteredPhone);
+      if (!isMatch) {
+        showToast('מספר הטלפון אינו תואם לשם שנבחר', 'error');
+        return;
+      }
+      verifiedMyPagesUser = selectedName;
+      document.getElementById('my-pages-phone-verification').classList.add('hidden');
+      updateMyPagesView();
     }
 
     function updateMyPagesView() {
@@ -624,6 +752,10 @@
       content.innerHTML = '';
       
       if (!selectedName) return;
+      if (verifiedMyPagesUser !== selectedName) {
+        content.innerHTML = '<div class="text-center text-slate-400 py-8">יש לאמת מספר טלפון כדי להמשיך</div>';
+        return;
+      }
       
       const userAssignments = assignments.filter(a => a.name === selectedName);
       
@@ -681,6 +813,7 @@
             <span class="text-slate-400">עד</span>
             <select id="${rangeToSelectId}" class="bg-slate-700 border border-slate-600 rounded-lg px-2 py-1 text-white">${options}</select>
             <button type="button" id="${rangeDeleteButtonId}" class="px-2 py-1 bg-red-600/70 hover:bg-red-600 text-white rounded text-xs transition-all">הסר</button>
+            <button type="button" id="range-learned-${index}" class="px-2 py-1 bg-emerald-600/80 hover:bg-emerald-500 text-white rounded text-xs transition-all">סמן כנלמד</button>
           `;
           card.appendChild(rangeControls);
           const fromSelect = rangeControls.querySelector(`#${rangeFromSelectId}`);
@@ -688,6 +821,7 @@
           fromSelect.value = uniqueDafim[0];
           toSelect.value = uniqueDafim[uniqueDafim.length - 1];
           rangeControls.querySelector(`#${rangeDeleteButtonId}`).onclick = () => confirmDeleteRange(selectedName, masechet, rangeFromSelectId, rangeToSelectId);
+          rangeControls.querySelector(`#range-learned-${index}`).onclick = () => confirmMarkRangeLearned(selectedName, masechet, rangeFromSelectId, rangeToSelectId);
         }
 
         if (hasFull && mas) {
@@ -837,9 +971,6 @@
               <button onclick="openEditForm('${masechet}', ${daf})" class="w-full bg-slate-600 hover:bg-slate-500 text-white font-semibold py-3 px-4 rounded-xl transition-all">
                 ערוך פרטים
               </button>
-              <button onclick="toggleLearnedModal('${masechet}', ${daf})" class="w-full ${status === 'learned' ? 'bg-blue-600 hover:bg-blue-500' : 'bg-emerald-600 hover:bg-emerald-500'} text-white font-semibold py-3 px-4 rounded-xl transition-all">
-                ${status === 'learned' ? 'בטל סימון נלמד' : 'סמן כנלמד'}
-              </button>
               <button onclick="confirmDelete('${masechet}', ${daf})" class="w-full bg-red-600/20 hover:bg-red-600/30 text-red-400 font-semibold py-3 px-4 rounded-xl transition-all border border-red-600/30">
                 מחק שיבוץ
               </button>
@@ -862,6 +993,12 @@
               <label for="assign-name" class="block text-sm font-medium text-slate-300 mb-1">שם *</label>
               <input type="text" id="assign-name" required value="${assignment?.name || ''}" 
                 class="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-white focus:border-amber-500 focus:outline-none">
+            </div>
+            <div>
+              <label for="assign-phone" class="block text-sm font-medium text-slate-300 mb-1">טלפון *</label>
+              <input type="tel" id="assign-phone" inputmode="numeric" required value="${assignment?.phone || ''}"
+                class="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-white focus:border-amber-500 focus:outline-none"
+                placeholder="05XXXXXXXX">
             </div>
             <div>
               <label for="assign-dedication" class="block text-sm font-medium text-slate-300 mb-1">הקדשה / הערה</label>
@@ -962,6 +1099,37 @@
       `);
     }
 
+    function confirmMarkRangeLearned(name, masechet, fromSelectId, toSelectId) {
+      const fromValue = parseInt(document.getElementById(fromSelectId)?.value);
+      const toValue = parseInt(document.getElementById(toSelectId)?.value);
+      if (!fromValue || !toValue) {
+        showToast('אנא בחר טווח', 'error');
+        return;
+      }
+      const start = Math.min(fromValue, toValue);
+      const end = Math.max(fromValue, toValue);
+      window.pendingRangeLearned = {
+        name,
+        masechet,
+        start,
+        end
+      };
+      showModal(`
+        <div class="p-6 text-center">
+          <h3 class="text-lg font-bold text-white mb-2">סימון טווח כנלמד</h3>
+          <p class="text-slate-400 mb-4">האם לסמן במסכת ${masechet} דפים ${formatDafNumber(start)}-${formatDafNumber(end)} כנלמד?</p>
+          <div class="flex gap-3">
+            <button onclick="closeModal(event)" class="flex-1 bg-slate-600 hover:bg-slate-500 text-white font-semibold py-3 px-4 rounded-xl transition-all">
+              ביטול
+            </button>
+            <button onclick="executeRangeLearned()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-3 px-4 rounded-xl transition-all">
+              סמן
+            </button>
+          </div>
+        </div>
+      `);
+    }
+
     // ========== AUTO ASSIGN ==========
     function openAutoAssign() {
       showModal(`
@@ -995,6 +1163,12 @@
                 class="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-white focus:border-amber-500 focus:outline-none">
             </div>
             <div>
+              <label for="full-phone" class="block text-sm font-medium text-slate-300 mb-1">טלפון *</label>
+              <input type="tel" id="full-phone" inputmode="numeric" required
+                class="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-white focus:border-amber-500 focus:outline-none"
+                placeholder="05XXXXXXXX">
+            </div>
+            <div>
               <label for="full-masechet" class="block text-sm font-medium text-slate-300 mb-1">בחר מסכת</label>
               <select id="full-masechet"
                 class="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-white focus:border-amber-500 focus:outline-none">
@@ -1021,11 +1195,12 @@
 
     async function processFullMasechet() {
       const name = document.getElementById('full-name').value.trim();
+      const phone = document.getElementById('full-phone').value.trim();
       const masechet = document.getElementById('full-masechet').value;
       const dedication = document.getElementById('full-dedication').value.trim();
       
-      if (!name) {
-        showToast('אנא הזן שם', 'error');
+      const identity = await resolveSignupIdentity(name, phone, dedication);
+      if (!identity) {
         return;
       }
       
@@ -1050,15 +1225,16 @@
         masechet: masechet,
         daf: 2,
         daf_end: mas.dafim + 1,
-        name: name,
-        dedication: dedication,
+        name: identity.name,
+        phone: identity.phone,
+        dedication: identity.dedication,
         learned: false,
         is_full_masechet: true
       };
       const result = await window.dataSdk.create(record, { skipRefresh: true });
       if (result.isOk) {
         await refreshAssignments();
-        showAssignmentSuccess(name, [record]);
+        showAssignmentSuccess(identity.name, [record]);
       } else {
         closeModal({ target: {}, currentTarget: {} });
         showToast('שגיאה בשיבוץ', 'error');
@@ -1075,6 +1251,12 @@
               <label for="auto-name" class="block text-sm font-medium text-slate-300 mb-1">שם *</label>
               <input type="text" id="auto-name" required
                 class="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-white focus:border-amber-500 focus:outline-none">
+            </div>
+            <div>
+              <label for="auto-phone" class="block text-sm font-medium text-slate-300 mb-1">טלפון *</label>
+              <input type="tel" id="auto-phone" inputmode="numeric" required
+                class="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-white focus:border-amber-500 focus:outline-none"
+                placeholder="05XXXXXXXX">
             </div>
             <div>
               <label for="auto-count" class="block text-sm font-medium text-slate-300 mb-1">כמה דפים?</label>
@@ -1097,10 +1279,12 @@
 
     async function processAutoAssign() {
       const name = document.getElementById('auto-name').value.trim();
+      const phone = document.getElementById('auto-phone').value.trim();
       const count = parseInt(document.getElementById('auto-count').value) || 1;
       const dedication = document.getElementById('auto-dedication').value.trim();
       
-      if (!name) return;
+      const identity = await resolveSignupIdentity(name, phone, dedication);
+      if (!identity) return;
       
       // Find free dafim with priority to fill gaps
       const freeDafim = [];
@@ -1148,7 +1332,7 @@
       showModal(`
         <div class="p-6">
           <h3 class="text-lg font-bold text-amber-400 mb-4">אישור שיבוץ</h3>
-          <p class="text-white mb-2">שם: ${name}</p>
+          <p class="text-white mb-2">שם: ${identity.name}</p>
           <p class="text-slate-400 text-sm mb-4">${toAssign.length} דפים: ${summaryText}</p>
           <div class="flex gap-3">
             <button onclick="closeModal(event)" class="flex-1 bg-slate-600 hover:bg-slate-500 text-white font-semibold py-3 px-4 rounded-xl transition-all">
@@ -1162,11 +1346,11 @@
       `);
       
       // Store data for confirmation
-      window.pendingAutoAssign = { name, dedication, dafim: toAssign };
+      window.pendingAutoAssign = { name: identity.name, phone: identity.phone, dedication: identity.dedication, dafim: toAssign };
     }
 
     async function executeAutoAssign() {
-      const { name, dedication, dafim } = window.pendingAutoAssign;
+      const { name, phone, dedication, dafim } = window.pendingAutoAssign;
       const btn = document.getElementById('confirm-auto-btn');
       if (btn) {
         btn.disabled = true;
@@ -1189,6 +1373,7 @@
             daf: range.start,
             daf_end: range.end,
             name: name,
+            phone: phone,
             dedication: dedication,
             learned: false,
             is_full_masechet: false
@@ -1215,6 +1400,12 @@
               <label for="range-name" class="block text-sm font-medium text-slate-300 mb-1">שם *</label>
               <input type="text" id="range-name" required
                 class="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-white focus:border-amber-500 focus:outline-none">
+            </div>
+            <div>
+              <label for="range-phone" class="block text-sm font-medium text-slate-300 mb-1">טלפון *</label>
+              <input type="tel" id="range-phone" inputmode="numeric" required
+                class="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-white focus:border-amber-500 focus:outline-none"
+                placeholder="05XXXXXXXX">
             </div>
             <div>
               <label for="range-masechet" class="block text-sm font-medium text-slate-300 mb-1">מסכת</label>
@@ -1278,12 +1469,15 @@
 
     async function processRangeStep1() {
       const name = document.getElementById('range-name').value.trim();
+      const phone = document.getElementById('range-phone').value.trim();
       const masechet = document.getElementById('range-masechet').value;
       const fromDaf = parseInt(document.getElementById('range-from').value);
       const toDaf = parseInt(document.getElementById('range-to').value);
       const dedication = document.getElementById('range-dedication').value.trim();
       
-      if (!name || fromDaf > toDaf) {
+      const identity = await resolveSignupIdentity(name, phone, dedication);
+      if (!identity) return;
+      if (fromDaf > toDaf) {
         showToast('אנא בדוק את הנתונים', 'error');
         return;
       }
@@ -1322,15 +1516,16 @@
         masechet: masechet,
         daf: range.start,
         daf_end: range.end,
-        name: name,
-        dedication: dedication,
+        name: identity.name,
+        phone: identity.phone,
+        dedication: identity.dedication,
         learned: false,
         is_full_masechet: false
       }));
       const result = await window.dataSdk.createBulk(records, { skipRefresh: true });
       if (result.isOk) {
         await refreshAssignments();
-        showAssignmentSuccess(name, records);
+        showAssignmentSuccess(identity.name, records);
       } else {
         closeModal({ target: {}, currentTarget: {} });
         showToast('שגיאה בשיבוץ', 'error');
@@ -1340,45 +1535,67 @@
     // ========== CRUD OPERATIONS ==========
     async function submitAssignment(masechet, daf, isEdit) {
       const name = document.getElementById('assign-name').value.trim();
+      const phone = document.getElementById('assign-phone').value.trim();
       const dedication = document.getElementById('assign-dedication').value.trim();
-      
-      if (!name) return;
       
       if (isEdit) {
         const assignment = getAssignment(masechet, daf);
-        if (assignment) {
-          const updateRecord = {
-            id: assignment.id,
-            masechet: assignment.masechet,
-            daf: assignment.range_start ?? assignment.daf,
-            daf_end: assignment.range_end ?? getRangeEnd(assignment),
-            name: name,
-            dedication: dedication,
-            learned: assignment.learned,
-            is_full_masechet: assignment.is_full_masechet
-          };
-          const result = await window.dataSdk.update(updateRecord);
-          if (result.isOk) {
-            showToast('הפרטים עודכנו');
-          } else {
-            showToast('שגיאה בעדכון', 'error');
+        if (!assignment) {
+          closeModal({ target: {}, currentTarget: {} });
+          return;
+        }
+        if (!isValidPhone(normalizePhone(phone))) {
+          showToast('אנא הזן מספר טלפון תקין', 'error');
+          return;
+        }
+        if (!name) {
+          showToast('אנא הזן שם', 'error');
+          return;
+        }
+        const existingByPhone = findExistingUserByPhone(normalizePhone(phone));
+        let resolvedName = name;
+        if (existingByPhone && existingByPhone.name !== name) {
+          const choice = await openPhoneConflictModal(existingByPhone.name, name);
+          if (choice !== 'use_existing') {
+            return;
           }
+          resolvedName = existingByPhone.name;
+        }
+        const updateRecord = {
+          id: assignment.id,
+          masechet: assignment.masechet,
+          daf: assignment.range_start ?? assignment.daf,
+          daf_end: assignment.range_end ?? getRangeEnd(assignment),
+          name: resolvedName,
+          phone: normalizePhone(phone),
+          dedication: dedication,
+          learned: assignment.learned,
+          is_full_masechet: assignment.is_full_masechet
+        };
+        const result = await window.dataSdk.update(updateRecord);
+        if (result.isOk) {
+          showToast('הפרטים עודכנו');
+        } else {
+          showToast('שגיאה בעדכון', 'error');
         }
         closeModal({ target: {}, currentTarget: {} });
         return;
       }
+      const identity = await resolveSignupIdentity(name, phone, dedication);
+      if (!identity) return;
       const result = await window.dataSdk.create({
         masechet: masechet,
         daf: daf,
         daf_end: daf,
-        name: name,
-        dedication: dedication,
+        name: identity.name,
+        phone: identity.phone,
+        dedication: identity.dedication,
         learned: false,
         is_full_masechet: false
       });
       
       if (result.isOk) {
-        showAssignmentSuccess(name, [{ masechet, daf }]);
+        showAssignmentSuccess(identity.name, [{ masechet, daf }]);
       } else {
         showToast('שגיאה בשיבוץ', 'error');
         closeModal({ target: {}, currentTarget: {} });
@@ -1480,6 +1697,17 @@
       closeModal({ target: {}, currentTarget: {} });
     }
 
+    async function executeRangeLearned() {
+      const pending = window.pendingRangeLearned;
+      if (!pending) {
+        closeModal({ target: {}, currentTarget: {} });
+        return;
+      }
+      await markMasechetRangeLearned(pending.name, pending.masechet, pending.start, pending.end);
+      window.pendingRangeLearned = null;
+      closeModal({ target: {}, currentTarget: {} });
+    }
+
     async function deleteMasechetRange(name, masechet, start, end) {
       const rangeStart = Math.min(start, end);
       const rangeEnd = Math.max(start, end);
@@ -1511,6 +1739,36 @@
       updateMyPagesView();
     }
 
+    async function markMasechetRangeLearned(name, masechet, start, end) {
+      const rangeStart = Math.min(start, end);
+      const rangeEnd = Math.max(start, end);
+      let updated = false;
+      for (let daf = rangeStart; daf <= rangeEnd; daf++) {
+        const assignment = assignments.find(
+          record => record.name === name && record.masechet === masechet && record.daf === daf
+        );
+        if (!assignment || assignment.learned) {
+          continue;
+        }
+        const result = await window.dataSdk.update({
+          id: assignment.id,
+          learned: true,
+          target_daf: daf
+        });
+        if (!result.isOk) {
+          showToast('שגיאה בעדכון', 'error');
+          return;
+        }
+        updated = true;
+      }
+      if (!updated) {
+        showToast('אין דפים לעדכון', 'error');
+        return;
+      }
+      showToast('הדפים סומנו כנלמד');
+      updateMyPagesView();
+    }
+
     // ========== CONFIG RENDER ==========
     function renderConfig() {
       document.getElementById('main-title').textContent = config.site_title || defaultConfig.site_title;
@@ -1536,6 +1794,7 @@
       return {
         ...record,
         daf_end: rangeEnd,
+        phone: record.phone || '',
         learned: Boolean(record.learned),
         is_full_masechet: Boolean(record.is_full_masechet)
       };
@@ -1610,7 +1869,7 @@
           return { isOk: false };
         }
       },
-      async update(record) {
+      async update(record, options = {}) {
         if (!record?.id) {
           return { isOk: false };
         }
@@ -1624,7 +1883,9 @@
             logHttpError('Update assignment', response);
             return { isOk: false };
           }
-          await refreshAssignments();
+          if (!options.skipRefresh) {
+            await refreshAssignments();
+          }
           return { isOk: true };
         } catch (error) {
           console.error(error);
