@@ -46,14 +46,13 @@
     .worm-pixel { transition: transform 0.15s ease, opacity 0.15s ease; }
     .worm-pixel:hover { transform: translateY(-1px); }
     .worm-map-shell {
-      --worm-cell-size: 6px;
+      --worm-cell-size: 4px;
       --worm-gap: 1px;
       --worm-radius: 2px;
       --worm-label-font-size: 11px;
-      --worm-border-size: 2px;
+      --worm-border-size: 1px;
       display: grid;
       width: fit-content;
-      max-width: 100%;
       grid-auto-flow: row dense;
       gap: var(--worm-gap);
       margin-inline: auto;
@@ -72,12 +71,12 @@
     }
     .worm-label {
       min-width: 0;
-      height: var(--worm-cell-size);
+      min-height: 16px;
       display: flex;
       align-items: center;
       justify-content: center;
       overflow: hidden;
-      padding: 0 2px;
+      padding: 2px 4px;
       font-weight: 700;
       font-size: var(--worm-label-font-size);
       line-height: 1;
@@ -194,7 +193,11 @@
   ];
   const TOTAL_DAFIM = 2711;
   const MAX_DAFIM = Math.max(...MASECHOT_DATA.map(m => m.dafim));
-  const MASECHET_LABEL_SPAN = 5;
+  const MAP_CELL_SIZE = 4;
+  const MAP_GAP = 1;
+  const MAP_COLS = 120;
+  const MASECHET_LABEL_MIN_SPAN = 8;
+  const MASECHET_LABEL_CHAR_PX = 7;
 
   const SEDER_COLORS = {
     'זרעים':  { bg:'bg-emerald-600', hover:'hover:bg-emerald-500', hex:'#059669', theme:'seder-zeraim' },
@@ -218,6 +221,14 @@
 
   function normalizePhone(v) { return String(v||'').replace(/\D/g,''); }
   function isValidPhone(p) { return /^\d{9,15}$/.test(p); }
+  function getMasechetLabelSpan(name) {
+    const textLength = [...String(name || '')].length;
+    const estimatedWidth = textLength * MASECHET_LABEL_CHAR_PX + 8;
+    return Math.max(
+      MASECHET_LABEL_MIN_SPAN,
+      Math.ceil((estimatedWidth + MAP_GAP) / (MAP_CELL_SIZE + MAP_GAP))
+    );
+  }
   function escapeHtml(v) { return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
   function buildDafRanges(nums) {
@@ -965,10 +976,6 @@
     const [rangeStart,setRangeStart]=React.useState(null);
     const [pendingSelection,setPendingSelection]=React.useState(null);
     const [loading,setLoading]=React.useState(false);
-    const mapAreaRef = React.useRef(null);
-    const [mapLayout,setMapLayout]=React.useState({ cell:6, cols:60, gap:1 });
-    const MAP_VIEWPORT_BUDGET_FRACTION = 0.98; // keep a small safety margin so the map never clips
-    const MAP_MAX_CELL_FRACTION = 0.0125; // keep cells at ~1.25% of available min dimension or smaller
     const signupIdentity = G.signupDraft;
     const mapEntries = React.useMemo(
       () => MASECHOT_DATA.flatMap(mas => [
@@ -976,7 +983,7 @@
           type: 'label',
           masechet: mas.name,
           seder: mas.seder,
-          span: MASECHET_LABEL_SPAN,
+          span: getMasechetLabelSpan(mas.name),
         },
         ...Array.from({ length:mas.dafim }, (_, i) => ({
           type: 'daf',
@@ -989,80 +996,12 @@
       ]),
       []
     );
-    const totalMapUnits = React.useMemo(
-      () => mapEntries.reduce((sum, item) => sum + (item.span || 1), 0),
-      [mapEntries]
-    );
     const totalLearned = React.useMemo(
       () => new Set(assignments.filter(a=>a.learned).map(a=>`${a.masechet}|${a.daf}`)).size,
       [assignments]
     );
     const pctOccupied = assignments.length/TOTAL_DAFIM*100;
     const pctLearned = totalLearned/TOTAL_DAFIM*100;
-
-    React.useLayoutEffect(() => {
-      const estimateRows = cols => {
-        let rows = 1;
-        let used = 0;
-        mapEntries.forEach(item => {
-          const span = Math.min(item.span || 1, cols);
-          if (used && used + span > cols) {
-            rows += 1;
-            used = 0;
-          }
-          used += span;
-          if (used === cols) used = 0;
-        });
-        return rows;
-      };
-      const updateLayout = () => {
-        const el = mapAreaRef.current;
-        if (!el) return;
-        const computed = window.getComputedStyle(el);
-        const padX = (parseFloat(computed.paddingLeft) || 0) + (parseFloat(computed.paddingRight) || 0);
-        const padY = (parseFloat(computed.paddingTop) || 0) + (parseFloat(computed.paddingBottom) || 0);
-        const width = Math.max(0, el.clientWidth - padX);
-        const height = Math.max(0, el.clientHeight - padY);
-        if (!width || !height) return;
-        const gap = 1;
-        const availableWidth = width * MAP_VIEWPORT_BUDGET_FRACTION;
-        const availableHeight = height * MAP_VIEWPORT_BUDGET_FRACTION;
-        const maxCellByBudget = Math.max(
-          2,
-          Math.floor(Math.min(availableWidth, availableHeight) * MAP_MAX_CELL_FRACTION)
-        );
-        let best = null;
-        const maxCols = Math.max(MASECHET_LABEL_SPAN, Math.min(totalMapUnits, Math.floor(availableWidth)));
-        for (let cols = MASECHET_LABEL_SPAN; cols <= maxCols; cols += 1) {
-          const rows = estimateRows(cols);
-          const cell = Math.floor(
-            Math.min(
-              (availableWidth - gap * Math.max(0, cols - 1)) / cols,
-              (availableHeight - gap * Math.max(0, rows - 1)) / rows
-            )
-          );
-          if (cell < 2 || cell > maxCellByBudget) continue;
-          if (!best || cell > best.cell) {
-            best = { cell, cols, gap };
-          }
-        }
-        if (!best) {
-          best = {
-            cell:2,
-            cols:Math.max(MASECHET_LABEL_SPAN, Math.min(totalMapUnits, Math.floor(availableWidth / 3))),
-            gap,
-          };
-        }
-        setMapLayout(current =>
-          current.cell === best.cell && current.cols === best.cols
-            ? current
-            : best
-        );
-      };
-      updateLayout();
-      window.addEventListener('resize', updateLayout);
-      return () => window.removeEventListener('resize', updateLayout);
-    }, [mapEntries, totalMapUnits, selectionMode]);
 
     const resetSelection = () => {
       setSelected(new Set());
@@ -1191,17 +1130,14 @@
         </div>
 
         {/* Worms container */}
-        <div ref={mapAreaRef} className="flex-1 min-h-0 px-2 pb-2 sm:px-3 sm:pb-3">
-          <div className="flex h-full items-center justify-center rounded-3xl border border-slate-700 bg-slate-800/40 p-2 sm:p-3 overflow-hidden">
+        <div className="flex-1 min-h-0 px-2 pb-2 sm:px-3 sm:pb-3">
+          <div className="flex h-full items-center justify-center rounded-3xl border border-slate-700 bg-slate-800/40 p-2 sm:p-3 overflow-auto">
             <div
               className="worm-map-shell"
               style={{
-                '--worm-cell-size': `${mapLayout.cell}px`,
-                '--worm-gap': `${mapLayout.gap}px`,
-                '--worm-radius': `${Math.max(2, Math.floor(mapLayout.cell / 3))}px`,
-                '--worm-border-size': `${Math.min(3, Math.max(2, Math.floor(mapLayout.cell / 2)))}px`,
-                '--worm-label-font-size': `${Math.max(7, Math.min(11, mapLayout.cell * 0.9))}px`,
-                gridTemplateColumns:`repeat(${mapLayout.cols}, ${mapLayout.cell}px)`,
+                '--worm-cell-size': `${MAP_CELL_SIZE}px`,
+                '--worm-gap': `${MAP_GAP}px`,
+                gridTemplateColumns:`repeat(${MAP_COLS}, ${MAP_CELL_SIZE}px)`,
               }}
             >
               {mapEntries.map(item=>{
