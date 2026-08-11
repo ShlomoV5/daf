@@ -1087,8 +1087,8 @@
       const masechet = document.getElementById('all-quick-masechet')?.value;
       const fromDaf = parseInt(document.getElementById('all-quick-from')?.value);
       const toDaf = parseInt(document.getElementById('all-quick-to')?.value);
-      if (!masechet || !fromDaf || !toDaf) {
-        showToast('אין דפים פנויים להוספה', 'error');
+      if (!masechet || Number.isNaN(fromDaf) || Number.isNaN(toDaf)) {
+        showToast('יש לבחור מסכת וטווח דפים להוספה', 'error');
         return;
       }
       const start = Math.min(fromDaf, toDaf);
@@ -1149,7 +1149,13 @@
         return;
       }
       for (let daf = record.daf; daf <= (record.daf_end ?? record.daf); daf += 1) {
-        const assignment = assignments.find(item => item.id === record.id && item.daf === daf) || assignments.find(item => item.masechet === record.masechet && item.daf === daf && item.name === record.name);
+        const assignment = assignments.find(item => item.id === record.id && item.daf === daf)
+          || assignments.find(item =>
+            item.masechet === record.masechet
+            && item.daf === daf
+            && item.name === record.name
+            && normalizePhone(item.phone) === normalizePhone(record.phone)
+          );
         if (!assignment || assignment.learned) {
           continue;
         }
@@ -1235,6 +1241,7 @@
       const sortedMasechot = Object.keys(grouped).sort((a, b) => (orderIndex.get(a) ?? 999) - (orderIndex.get(b) ?? 999));
 
       sortedMasechot.forEach(masechet => {
+        const safeMasechet = escapeHtml(masechet);
         const card = document.createElement('div');
         card.className = 'bg-slate-700/50 rounded-xl p-4 border border-slate-600 space-y-2';
         const rows = grouped[masechet]
@@ -1248,7 +1255,7 @@
             return `
               <div class="bg-slate-600/50 rounded-lg p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <div>
-                  <div class="font-semibold text-white">${masechet}</div>
+                  <div class="font-semibold text-white">${safeMasechet}</div>
                   <div class="text-sm text-slate-300">אצווה: ${batchText}</div>
                   <div class="text-xs ${record.learned ? 'text-emerald-400' : 'text-blue-300'}">${record.learned ? 'נלמד' : 'משובץ'}</div>
                 </div>
@@ -1259,7 +1266,7 @@
               </div>
             `;
           }).join('');
-        card.innerHTML = `<h3 class="font-bold text-amber-400">${masechet}</h3>${rows}`;
+        card.innerHTML = `<h3 class="font-bold text-amber-400">${safeMasechet}</h3>${rows}`;
         content.appendChild(card);
       });
     }
