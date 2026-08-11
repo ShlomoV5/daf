@@ -1558,24 +1558,22 @@
             return;
           }
         }
-        if (assignment) {
-          const updateRecord = {
-            id: assignment.id,
-            masechet: assignment.masechet,
-            daf: assignment.range_start ?? assignment.daf,
-            daf_end: assignment.range_end ?? getRangeEnd(assignment),
-            name: name,
-            phone: normalizePhone(phone),
-            dedication: dedication,
-            learned: assignment.learned,
-            is_full_masechet: assignment.is_full_masechet
-          };
-          const result = await window.dataSdk.update(updateRecord);
-          if (result.isOk) {
-            showToast('הפרטים עודכנו');
-          } else {
-            showToast('שגיאה בעדכון', 'error');
-          }
+        const updateRecord = {
+          id: assignment.id,
+          masechet: assignment.masechet,
+          daf: assignment.range_start ?? assignment.daf,
+          daf_end: assignment.range_end ?? getRangeEnd(assignment),
+          name: name,
+          phone: normalizePhone(phone),
+          dedication: dedication,
+          learned: assignment.learned,
+          is_full_masechet: assignment.is_full_masechet
+        };
+        const result = await window.dataSdk.update(updateRecord);
+        if (result.isOk) {
+          showToast('הפרטים עודכנו');
+        } else {
+          showToast('שגיאה בעדכון', 'error');
         }
         closeModal({ target: {}, currentTarget: {} });
         return;
@@ -1753,7 +1751,7 @@
           id: assignment.id,
           learned: true,
           target_daf: daf
-        });
+        }, { skipRefresh: true });
         if (!result.isOk) {
           showToast('שגיאה בעדכון', 'error');
           return;
@@ -1764,6 +1762,7 @@
         showToast('אין דפים לעדכון', 'error');
         return;
       }
+      await refreshAssignments();
       showToast('הדפים סומנו כנלמד');
       updateMyPagesView();
     }
@@ -1868,7 +1867,7 @@
           return { isOk: false };
         }
       },
-      async update(record) {
+      async update(record, options = {}) {
         if (!record?.id) {
           return { isOk: false };
         }
@@ -1882,7 +1881,9 @@
             logHttpError('Update assignment', response);
             return { isOk: false };
           }
-          await refreshAssignments();
+          if (!options.skipRefresh) {
+            await refreshAssignments();
+          }
           return { isOk: true };
         } catch (error) {
           console.error(error);
