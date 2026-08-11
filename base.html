@@ -771,7 +771,7 @@
     const [success,setSuccess]=React.useState(null);
 
     const pctLearned = totalLearned/TOTAL_DAFIM*100;
-    const pctAssigned = (totalAssigned-totalLearned)/TOTAL_DAFIM*100;
+    const pctOccupied = totalAssigned/TOTAL_DAFIM*100;
 
     const handleSuccess = (name, recs) => { setModal(null); setSuccess({name,recs}); };
 
@@ -805,7 +805,7 @@
             <div className="grid grid-cols-3 gap-2 text-center">
               {[
                 {v:TOTAL_DAFIM.toLocaleString(), l:'סה״כ', cls:'text-amber-400'},
-                {v:(totalAssigned-totalLearned).toLocaleString(), l:'שובצו', cls:'text-blue-400'},
+                {v:totalAssigned.toLocaleString(), l:'נתפסו', cls:'text-blue-400'},
                 {v:totalLearned.toLocaleString(), l:'נלמדו', cls:'text-emerald-400'},
               ].map(({v,l,cls})=>(
                 <div key={l} className="bg-slate-800/60 border border-slate-600 rounded-xl py-2">
@@ -814,15 +814,21 @@
                 </div>
               ))}
             </div>
-            <div className="space-y-1">
-              <div className="flex justify-between text-xs text-slate-400">
-                <span>התקדמות כללית</span>
-                <span className="text-amber-400 font-semibold">{Math.round(pctLearned)}%</span>
-              </div>
-              <div className="h-3 bg-slate-600 rounded-full overflow-hidden flex">
-                <div className="h-full bg-emerald-500 transition-all duration-700" style={{width:`${pctLearned}%`}} />
-                <div className="h-full bg-blue-500 transition-all duration-700" style={{width:`${pctAssigned}%`}} />
-              </div>
+            <div className="space-y-2">
+              {[
+                { label:'נתפסו', value:pctOccupied, cls:'bg-blue-500', textCls:'text-blue-400' },
+                { label:'נלמדו', value:pctLearned, cls:'bg-emerald-500', textCls:'text-emerald-400' },
+              ].map(item=>(
+                <div key={item.label} className="space-y-1">
+                  <div className="flex justify-between text-xs text-slate-400">
+                    <span>{item.label}</span>
+                    <span className={`font-semibold ${item.textCls}`}>{Math.round(item.value)}%</span>
+                  </div>
+                  <div className="h-2.5 bg-slate-600 rounded-full overflow-hidden">
+                    <div className={`h-full ${item.cls} transition-all duration-700`} style={{width:`${item.value}%`}} />
+                  </div>
+                </div>
+              ))}
             </div>
           </button>
         </div>
@@ -857,7 +863,60 @@
     const [rangeStart,setRangeStart]=React.useState(null);
     const [pendingSelection,setPendingSelection]=React.useState(null);
     const [loading,setLoading]=React.useState(false);
+    const mapAreaRef = React.useRef(null);
+    const [mapLayout,setMapLayout]=React.useState({ cell:6, cols:60, gap:1 });
     const signupIdentity = G.signupDraft;
+    const flatPages = React.useMemo(
+      () => MASECHOT_DATA.flatMap(mas =>
+        Array.from({ length:mas.dafim }, (_, i) => ({
+          masechet: mas.name,
+          seder: mas.seder,
+          daf: i + 2,
+          isStart: i === 0,
+        }))
+      ),
+      []
+    );
+    const totalLearned = React.useMemo(
+      () => new Set(assignments.filter(a=>a.learned).map(a=>`${a.masechet}|${a.daf}`)).size,
+      [assignments]
+    );
+    const pctOccupied = assignments.length/TOTAL_DAFIM*100;
+    const pctLearned = totalLearned/TOTAL_DAFIM*100;
+
+    React.useLayoutEffect(() => {
+      const updateLayout = () => {
+        const el = mapAreaRef.current;
+        if (!el) return;
+        const width = el.clientWidth;
+        const height = el.clientHeight;
+        if (!width || !height) return;
+        const gap = 1;
+        const totalCells = flatPages.length;
+        let best = { cell:2, cols:Math.max(1, Math.min(totalCells, Math.floor(width / 3))), gap };
+        const maxCols = Math.max(1, Math.min(totalCells, width));
+        for (let cols = 1; cols <= maxCols; cols += 1) {
+          const rows = Math.ceil(totalCells / cols);
+          const cell = Math.floor(
+            Math.min(
+              (width - gap * Math.max(0, cols - 1)) / cols,
+              (height - gap * Math.max(0, rows - 1)) / rows
+            )
+          );
+          if (cell > best.cell) {
+            best = { cell, cols, gap };
+          }
+        }
+        setMapLayout(current =>
+          current.cell === best.cell && current.cols === best.cols
+            ? current
+            : best
+        );
+      };
+      updateLayout();
+      window.addEventListener('resize', updateLayout);
+      return () => window.removeEventListener('resize', updateLayout);
+    }, [flatPages.length, selectionMode]);
 
     const resetSelection = () => {
       setSelected(new Set());
@@ -959,10 +1018,16 @@
               ))}
             </div>
           </div>
-          <div className="flex gap-4 px-4 pb-2 text-xs text-slate-400">
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded inline-block bg-emerald-500" /> נלמד</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded inline-block bg-blue-500" /> משובץ</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded inline-block bg-slate-600 border border-slate-500" /> פנוי</span>
+          <div className="px-4 pb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-xs">
+            <div className="flex flex-wrap gap-4 text-slate-400">
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded inline-block bg-emerald-500" /> נלמד</span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded inline-block bg-blue-500" /> נתפס</span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded inline-block bg-slate-600 border border-slate-500" /> פנוי</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-3 text-slate-300">
+              <span>נתפסו <span className="text-blue-400 font-semibold">{Math.round(pctOccupied)}%</span></span>
+              <span>נלמדו <span className="text-emerald-400 font-semibold">{Math.round(pctLearned)}%</span></span>
+            </div>
           </div>
           {selectionMode && (
             <div className="px-4 pb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs">
@@ -980,50 +1045,67 @@
         </div>
 
         {/* Worms container */}
-        <div className="flex-1 overflow-y-auto px-3 py-4">
-          <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4 items-start">
-            {MASECHOT_DATA.map(mas=>{
-              const color = SEDER_COLORS[mas.seder];
-              const stats = getMasechetStats(mas.name);
-
-              return (
-                <div key={mas.name} className="flex flex-col gap-2 rounded-3xl border border-slate-700 bg-slate-800/60 p-3">
-                  <div className="flex items-center justify-between gap-3 px-1 text-xs">
-                    <button onClick={()=>setMasechetTarget(mas.name)} className="font-bold text-white whitespace-nowrap text-sm hover:text-amber-300 transition-colors">
-                      {mas.name}
-                    </button>
-                    <div className="text-slate-400 text-left">
-                      <div>{mas.dafim} דפים</div>
-                      <div>{stats.free} פנויים</div>
-                    </div>
-                  </div>
-                  <button type="button" onClick={()=>setMasechetTarget(mas.name)} className="text-right text-[11px] text-slate-400 hover:text-slate-200 transition-colors">
-                    {mas.seder} · {stats.learned} נלמדו · {stats.assigned} שובצו
-                  </button>
-                  <div className="worm-frame rounded-3xl border-2 bg-slate-800/90 px-2 py-2" style={{borderColor:color.hex}} onClick={()=>setMasechetTarget(mas.name)}>
-                    <div className="flex flex-wrap gap-1">
-                      {Array.from({length:mas.dafim},(_, i)=>i+2).map(d=>{
-                        const st=getDafStatus(mas.name,d);
-                        let cls='bg-slate-700 border border-slate-500 text-slate-400';
-                        if (st==='learned') cls='bg-emerald-500 border border-emerald-400 text-white';
-                        else if (st==='assigned') cls='bg-blue-500 border border-blue-400 text-white';
-                        const isSelected = selected.has(`${mas.name}|${d}`);
-                        if (isSelected) cls='bg-amber-500 border border-amber-300 ring-2 ring-amber-300';
-                        return (
-                          <button
-                            key={d}
-                            onClick={e=>{ e.stopPropagation(); handleDafClick(mas.name,d); }}
-                            title={`${mas.name} דף ${formatDaf(d)}`}
-                            aria-label={`${mas.name} דף ${formatDaf(d)}`}
-                            className={`worm-pixel w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-[4px] flex items-center justify-center shrink-0 ${cls}`}
-                          />
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+        <div ref={mapAreaRef} className="flex-1 min-h-0 px-3 pb-3">
+          <div className="h-full rounded-3xl border border-slate-700 bg-slate-800/40 p-2 sm:p-3 overflow-hidden">
+            <div
+              className="grid mx-auto"
+              style={{
+                width:'fit-content',
+                maxWidth:'100%',
+                gridTemplateColumns:`repeat(${mapLayout.cols}, ${mapLayout.cell}px)`,
+                gap:`${mapLayout.gap}px`,
+              }}
+            >
+              {flatPages.map(item=>{
+                const color = SEDER_COLORS[item.seder];
+                const st = getDafStatus(item.masechet, item.daf);
+                const isSelected = selected.has(`${item.masechet}|${item.daf}`);
+                let className = 'worm-pixel border';
+                let style = {
+                  width:`${mapLayout.cell}px`,
+                  height:`${mapLayout.cell}px`,
+                  borderRadius:`${Math.max(2, Math.floor(mapLayout.cell / 3))}px`,
+                  backgroundColor:'rgba(51, 65, 85, 0.9)',
+                  borderColor:'rgba(100, 116, 139, 0.9)',
+                };
+                if (st === 'learned') {
+                  className += ' bg-emerald-500 border-emerald-300';
+                  style = { ...style, backgroundColor:'#10b981', borderColor:'#a7f3d0' };
+                } else if (st === 'assigned') {
+                  className += ' bg-blue-500 border-blue-300';
+                  style = { ...style, backgroundColor:'#3b82f6', borderColor:'#bfdbfe' };
+                } else {
+                  style = {
+                    ...style,
+                    backgroundColor:`${color.hex}22`,
+                    borderColor:`${color.hex}99`,
+                  };
+                }
+                if (isSelected) {
+                  style = {
+                    ...style,
+                    backgroundColor:'#f59e0b',
+                    borderColor:'#fde68a',
+                    boxShadow:'0 0 0 1px rgba(253,230,138,0.95)',
+                  };
+                } else if (item.isStart) {
+                  style = {
+                    ...style,
+                    boxShadow:`0 0 0 1px ${color.hex}`,
+                  };
+                }
+                return (
+                  <button
+                    key={`${item.masechet}|${item.daf}`}
+                    onClick={()=>handleDafClick(item.masechet, item.daf)}
+                    title={`${item.masechet} · דף ${formatDaf(item.daf)}${item.isStart ? ' · תחילת מסכת' : ''}`}
+                    aria-label={`${item.masechet} דף ${formatDaf(item.daf)}`}
+                    className={className}
+                    style={style}
+                  />
+                );
+              })}
+            </div>
           </div>
         </div>
 
@@ -1041,9 +1123,7 @@
             <div className="p-5 space-y-3">
               <h3 className="text-lg font-bold text-amber-400">{viewTarget.masechet} דף {formatDaf(viewTarget.daf)}</h3>
               <div className="bg-slate-700/60 rounded-xl p-3 text-sm space-y-1">
-                {viewTarget.assignment.name && <p className="text-white">שם: {viewTarget.assignment.name}</p>}
-                <p className={viewTarget.assignment.learned?'text-emerald-400':'text-blue-400'}>{viewTarget.assignment.learned?'✓ נלמד':'משובץ'}</p>
-                {viewTarget.assignment.dedication && <p className="text-slate-400 text-xs">{viewTarget.assignment.dedication}</p>}
+                <p className={viewTarget.assignment.learned?'text-emerald-400':'text-blue-400'}>{viewTarget.assignment.learned?'✓ נלמד':'נתפס'}</p>
               </div>
               <p className="text-slate-500 text-xs">לעריכה ומחיקה יש להיכנס ל"הדפים שלי"</p>
               <button onClick={()=>setViewTarget(null)} className="w-full bg-slate-600 hover:bg-slate-500 text-white font-semibold py-2 rounded-xl transition-all text-sm">סגור</button>
@@ -1062,7 +1142,7 @@
                       <p className="text-sm text-slate-300">{stats.mas?.seder} · {stats.mas?.dafim} דפים</p>
                     </div>
                     <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                      <div className="bg-slate-700/60 rounded-xl py-2"><div className="text-white font-bold">{stats.assigned}</div><div className="text-slate-400">שובצו</div></div>
+                      <div className="bg-slate-700/60 rounded-xl py-2"><div className="text-white font-bold">{stats.assigned}</div><div className="text-slate-400">נתפסו</div></div>
                       <div className="bg-slate-700/60 rounded-xl py-2"><div className="text-emerald-400 font-bold">{stats.learned}</div><div className="text-slate-400">נלמדו</div></div>
                       <div className="bg-slate-700/60 rounded-xl py-2"><div className="text-amber-300 font-bold">{stats.free}</div><div className="text-slate-400">פנויים</div></div>
                     </div>

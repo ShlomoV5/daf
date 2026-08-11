@@ -1025,22 +1025,30 @@
         showToast('אנא הזן מספר טלפון תקין', 'error');
         return;
       }
-      for (const record of user.records) {
-        const result = await window.dataSdk.update({
+      const nextDedication = dedication || '';
+      const changedRecords = user.records.filter(record => {
+        return record.name !== name
+          || normalizePhone(record.phone) !== phone
+          || (record.dedication || '') !== nextDedication;
+      });
+      if (!changedRecords.length) {
+        showToast('לא זוהו שינויים', 'info');
+        return;
+      }
+      const results = await Promise.all(changedRecords.map(record => window.dataSdk.update({
           id: record.id,
           masechet: record.masechet,
           daf: record.daf,
           daf_end: record.daf_end ?? record.daf,
           name,
           phone,
-          dedication: dedication || '',
+          dedication: nextDedication,
           learned: record.learned,
           is_full_masechet: record.is_full_masechet
-        }, { skipRefresh: true });
-        if (!result.isOk) {
-          showToast('שגיאה בעדכון פרטים', 'error');
-          return;
-        }
+        }, { skipRefresh: true })));
+      if (results.some(result => !result.isOk)) {
+        showToast('שגיאה בעדכון פרטים', 'error');
+        return;
       }
       await refreshAssignments();
       const refreshed = getUserGroups().find(group => group.records.some(record => user.records.some(old => old.id === record.id)));
@@ -1449,7 +1457,7 @@
     }
 
     function closeModal(event) {
-      if (event && event.target !== event.currentTarget) return;
+      if (event?.currentTarget instanceof Element && event.target !== event.currentTarget) return;
       document.getElementById('modal-container').innerHTML = '';
     }
 
