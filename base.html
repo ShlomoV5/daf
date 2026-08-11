@@ -75,7 +75,7 @@
       <!-- Home Screen -->
       <div id="home-screen">
         <!-- Stats Cards -->
-        <div class="grid grid-cols-3 gap-3 mb-6">
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
           <div class="bg-slate-700/50 rounded-xl p-4 text-center border border-slate-600">
             <div id="stat-total" class="text-2xl font-bold text-amber-400">2,711</div>
             <div class="text-xs text-slate-400">סה״כ דפים</div>
@@ -125,6 +125,10 @@
           <button onclick="openMyPages()" class="bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 text-white font-semibold py-4 px-4 rounded-xl transition-all shadow-lg flex flex-col items-center gap-1">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
             <span class="text-sm">הדפים שלי</span>
+          </button>
+          <button onclick="openAllLearners()" class="bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-semibold py-4 px-4 rounded-xl transition-all shadow-lg flex flex-col items-center gap-1">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5V4H2v16h5m10 0v-2a4 4 0 00-8 0v2m8 0H9m4-9a3 3 0 110-6 3 3 0 010 6z"/></svg>
+            <span class="text-sm">כל הלומדים</span>
           </button>
         </div>
 
@@ -181,6 +185,21 @@
         </div>
 
         <div id="my-pages-content" class="space-y-4"></div>
+      </div>
+
+      <!-- All Learners Screen (admin) -->
+      <div id="all-learners-screen" class="hidden">
+        <button onclick="goHome()" class="flex items-center gap-2 text-amber-400 mb-4 hover:text-amber-300 transition-colors">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+          חזרה לרשימה
+        </button>
+        <div class="bg-slate-700/50 rounded-xl p-4 mb-4 border border-slate-600">
+          <h2 class="text-xl font-bold text-amber-400 mb-3">כל הלומדים</h2>
+          <select id="all-learners-select" onchange="handleAllLearnersSelection()" class="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-white focus:border-amber-500 focus:outline-none">
+            <option value="">-- בחר לומד --</option>
+          </select>
+        </div>
+        <div id="all-learners-content" class="space-y-4"></div>
       </div>
     </main>
 
@@ -239,6 +258,7 @@
     let assignments = [];
     let currentMasechet = null;
     let verifiedMyPagesUser = null;
+    let selectedAllLearnersKey = null;
 
     const defaultConfig = {
       site_title: "מסיימים ש״ס יחד אחים",
@@ -491,7 +511,7 @@
             </button>
           </div>
           <button type="button" onclick="closeModal(event)" class="mt-4 w-full bg-slate-600 hover:bg-slate-500 text-white font-semibold py-2 px-4 rounded-xl transition-all">
-            סגור
+            אישור
           </button>
         </div>
       `);
@@ -549,6 +569,70 @@
       toast.textContent = message;
       container.appendChild(toast);
       setTimeout(() => toast.remove(), 3000);
+    }
+
+    function showActionDoneModal(message, onOk) {
+      showModal(`
+        <div class="p-6 text-center">
+          <h3 class="text-lg font-bold text-emerald-400 mb-3">הפעולה הושלמה</h3>
+          <p class="text-slate-300 mb-4">${message}</p>
+          <button type="button" onclick="closeActionDoneModal()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-3 px-4 rounded-xl transition-all">
+            אישור
+          </button>
+        </div>
+      `);
+      window.pendingActionDoneCallback = typeof onOk === 'function' ? onOk : null;
+    }
+
+    function closeActionDoneModal() {
+      closeModal({ target: {}, currentTarget: {} });
+      if (typeof window.pendingActionDoneCallback === 'function') {
+        const callback = window.pendingActionDoneCallback;
+        window.pendingActionDoneCallback = null;
+        callback();
+      } else {
+        window.pendingActionDoneCallback = null;
+      }
+    }
+
+    function getUserGroups() {
+      const groups = new Map();
+      assignmentRanges.forEach(record => {
+        const phone = normalizePhone(record.phone);
+        const key = phone ? `phone:${phone}` : `name:${record.name}`;
+        const current = groups.get(key);
+        if (!current) {
+          groups.set(key, {
+            key,
+            name: record.name,
+            phone: phone || '',
+            dedication: record.dedication || '',
+            records: [record]
+          });
+          return;
+        }
+        current.records.push(record);
+        if (!current.phone && phone) {
+          current.phone = phone;
+        }
+        if (!current.dedication && record.dedication) {
+          current.dedication = record.dedication;
+        }
+      });
+      return [...groups.values()].sort((a, b) => a.name.localeCompare(b.name, 'he'));
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function getUserByKey(userKey) {
+      return getUserGroups().find(group => group.key === userKey) || null;
     }
 
     const COUNTDOWN_TARGET = new Date(2026, 10, 29, 0, 0, 0);
@@ -901,12 +985,299 @@
       });
     }
 
+    function renderAllLearnersSelect() {
+      const select = document.getElementById('all-learners-select');
+      const groups = getUserGroups();
+      const currentValue = selectedAllLearnersKey;
+      select.innerHTML = '<option value="">-- בחר לומד --</option>';
+      groups.forEach(group => {
+        const pagesCount = group.records.reduce((sum, record) => {
+          return sum + ((record.daf_end ?? record.daf) - record.daf + 1);
+        }, 0);
+        const option = document.createElement('option');
+        option.value = group.key;
+        option.textContent = `${group.name} (${pagesCount} דפים${group.phone ? ` · ${group.phone}` : ''})`;
+        select.appendChild(option);
+      });
+      if (currentValue && groups.some(group => group.key === currentValue)) {
+        select.value = currentValue;
+      } else {
+        selectedAllLearnersKey = '';
+      }
+    }
+
+    function handleAllLearnersSelection() {
+      selectedAllLearnersKey = document.getElementById('all-learners-select').value;
+      renderAllLearnersView();
+    }
+
+    async function saveAllLearnerDetails() {
+      const user = getUserByKey(selectedAllLearnersKey);
+      if (!user) return;
+      const name = document.getElementById('all-learner-name')?.value.trim();
+      const phone = normalizePhone(document.getElementById('all-learner-phone')?.value);
+      const dedication = document.getElementById('all-learner-dedication')?.value.trim();
+      if (!name) {
+        showToast('יש להזין שם', 'error');
+        return;
+      }
+      if (phone && !isValidPhone(phone)) {
+        showToast('אנא הזן מספר טלפון תקין', 'error');
+        return;
+      }
+      for (const record of user.records) {
+        const result = await window.dataSdk.update({
+          id: record.id,
+          masechet: record.masechet,
+          daf: record.daf,
+          daf_end: record.daf_end ?? record.daf,
+          name,
+          phone,
+          dedication: dedication || '',
+          learned: record.learned,
+          is_full_masechet: record.is_full_masechet
+        }, { skipRefresh: true });
+        if (!result.isOk) {
+          showToast('שגיאה בעדכון פרטים', 'error');
+          return;
+        }
+      }
+      await refreshAssignments();
+      const refreshed = getUserGroups().find(group => group.records.some(record => user.records.some(old => old.id === record.id)));
+      selectedAllLearnersKey = refreshed?.key || selectedAllLearnersKey;
+      renderAllLearnersSelect();
+      renderAllLearnersView();
+      showActionDoneModal('פרטי ההרשמה עודכנו.');
+    }
+
+    function getFreeDafimByMasechet(masechet) {
+      const mas = MASECHOT_DATA.find(item => item.name === masechet);
+      if (!mas) return [];
+      const free = [];
+      for (let daf = 2; daf <= mas.dafim + 1; daf += 1) {
+        if (!getAssignment(masechet, daf)) {
+          free.push(daf);
+        }
+      }
+      return free;
+    }
+
+    function updateAllLearnersQuickAddOptions() {
+      const masechetSelect = document.getElementById('all-quick-masechet');
+      const fromSelect = document.getElementById('all-quick-from');
+      const toSelect = document.getElementById('all-quick-to');
+      if (!masechetSelect || !fromSelect || !toSelect) return;
+      const freeDafim = getFreeDafimByMasechet(masechetSelect.value);
+      const options = freeDafim.map(daf => `<option value="${daf}">${formatDafNumber(daf)}</option>`).join('');
+      fromSelect.innerHTML = options;
+      toSelect.innerHTML = options;
+      if (freeDafim.length) {
+        fromSelect.value = freeDafim[0];
+        toSelect.value = freeDafim[freeDafim.length - 1];
+      }
+    }
+
+    async function quickAddForAllLearner() {
+      const user = getUserByKey(selectedAllLearnersKey);
+      if (!user) return;
+      if (!user.phone || !isValidPhone(user.phone)) {
+        showToast('יש להשלים מספר טלפון תקין בפרטי הלומד לפני הוספת דפים', 'error');
+        return;
+      }
+      const masechet = document.getElementById('all-quick-masechet')?.value;
+      const fromDaf = parseInt(document.getElementById('all-quick-from')?.value);
+      const toDaf = parseInt(document.getElementById('all-quick-to')?.value);
+      if (!masechet || Number.isNaN(fromDaf) || Number.isNaN(toDaf)) {
+        showToast('יש לבחור מסכת וטווח דפים להוספה', 'error');
+        return;
+      }
+      const start = Math.min(fromDaf, toDaf);
+      const end = Math.max(fromDaf, toDaf);
+      const dafim = [];
+      for (let daf = start; daf <= end; daf += 1) {
+        if (!getAssignment(masechet, daf)) {
+          dafim.push(daf);
+        }
+      }
+      if (!dafim.length) {
+        showToast('הדפים שנבחרו כבר תפוסים', 'error');
+        return;
+      }
+      const ranges = buildDafRanges(dafim);
+      const records = ranges.map(range => ({
+        masechet,
+        daf: range.start,
+        daf_end: range.end,
+        name: user.name,
+        phone: user.phone || '',
+        dedication: user.dedication || '',
+        learned: false,
+        is_full_masechet: false
+      }));
+      const result = await window.dataSdk.createBulk(records);
+      if (!result.isOk) {
+        showToast('שגיאה בהוספה', 'error');
+        return;
+      }
+      await refreshAssignments();
+      renderAllLearnersSelect();
+      renderAllLearnersView();
+      showActionDoneModal('הדפים נוספו בהצלחה.');
+    }
+
+    async function deleteAllLearnerBatch(batchId) {
+      const record = assignmentRanges.find(item => item.id === batchId);
+      if (!record) {
+        showToast('שיבוץ לא נמצא', 'error');
+        return;
+      }
+      const result = await window.dataSdk.delete({ id: record.id });
+      if (!result.isOk) {
+        showToast('שגיאה במחיקה', 'error');
+        return;
+      }
+      await refreshAssignments();
+      renderAllLearnersSelect();
+      renderAllLearnersView();
+      showActionDoneModal('השיבוץ נמחק.');
+    }
+
+    async function markAllLearnerBatchRead(batchId) {
+      const record = assignmentRanges.find(item => item.id === batchId);
+      if (!record) {
+        showToast('שיבוץ לא נמצא', 'error');
+        return;
+      }
+      for (let daf = record.daf; daf <= (record.daf_end ?? record.daf); daf += 1) {
+        const assignment = assignments.find(item => item.id === record.id && item.daf === daf)
+          || assignments.find(item =>
+            item.masechet === record.masechet
+            && item.daf === daf
+            && item.name === record.name
+            && normalizePhone(item.phone) === normalizePhone(record.phone)
+          );
+        if (!assignment || assignment.learned) {
+          continue;
+        }
+        const result = await window.dataSdk.update({
+          id: assignment.id,
+          learned: true,
+          target_daf: daf
+        }, { skipRefresh: true });
+        if (!result.isOk) {
+          showToast('שגיאה בעדכון', 'error');
+          return;
+        }
+      }
+      await refreshAssignments();
+      renderAllLearnersSelect();
+      renderAllLearnersView();
+      showActionDoneModal('הדפים סומנו כנלמד.');
+    }
+
+    function renderAllLearnersView() {
+      const content = document.getElementById('all-learners-content');
+      if (!content) return;
+      content.innerHTML = '';
+      if (!selectedAllLearnersKey) {
+        content.innerHTML = '<div class="text-center text-slate-400 py-8">בחר לומד להצגת הפרטים</div>';
+        return;
+      }
+      const user = getUserByKey(selectedAllLearnersKey);
+      if (!user) {
+        content.innerHTML = '<div class="text-center text-slate-400 py-8">הלומד לא נמצא</div>';
+        return;
+      }
+
+      const safeName = escapeHtml(user.name);
+      const safePhone = escapeHtml(user.phone || '');
+      const safeDedication = escapeHtml(user.dedication || '');
+      const profileCard = document.createElement('div');
+      profileCard.className = 'bg-slate-700/50 rounded-xl p-4 border border-slate-600 space-y-3';
+      profileCard.innerHTML = `
+        <h3 class="font-bold text-amber-400">פרטי הרשמה</h3>
+        <div class="grid sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-sm text-slate-300 mb-1">שם</label>
+            <input id="all-learner-name" type="text" value="${safeName}" class="w-full bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-white focus:border-amber-500 focus:outline-none">
+          </div>
+          <div>
+            <label class="block text-sm text-slate-300 mb-1">טלפון</label>
+            <input id="all-learner-phone" type="tel" inputmode="numeric" value="${safePhone}" placeholder="אפשר להשאיר ריק / להוסיף" class="w-full bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-white focus:border-amber-500 focus:outline-none">
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm text-slate-300 mb-1">הקדשה / הערה</label>
+          <textarea id="all-learner-dedication" rows="2" class="w-full bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-white focus:border-amber-500 focus:outline-none resize-none">${safeDedication}</textarea>
+        </div>
+        <button type="button" onclick="saveAllLearnerDetails()" class="w-full bg-slate-600 hover:bg-slate-500 text-white font-semibold py-2 px-4 rounded-xl transition-all">שמור פרטים</button>
+      `;
+      content.appendChild(profileCard);
+
+      const quickCard = document.createElement('div');
+      quickCard.className = 'bg-slate-700/50 rounded-xl p-4 border border-slate-600 space-y-3';
+      quickCard.innerHTML = `
+        <h3 class="font-bold text-amber-400">הוספה מהירה של דפים פנויים</h3>
+        <div class="grid sm:grid-cols-3 gap-2">
+          <select id="all-quick-masechet" onchange="updateAllLearnersQuickAddOptions()" class="bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-white">
+            ${MASECHOT_DATA.map(m => `<option value="${m.name}">${m.name}</option>`).join('')}
+          </select>
+          <select id="all-quick-from" class="bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-white"></select>
+          <select id="all-quick-to" class="bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-white"></select>
+        </div>
+        <button type="button" onclick="quickAddForAllLearner()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-2 px-4 rounded-xl transition-all">הוסף דפים</button>
+      `;
+      content.appendChild(quickCard);
+      updateAllLearnersQuickAddOptions();
+
+      const grouped = {};
+      user.records.forEach(record => {
+        if (!grouped[record.masechet]) {
+          grouped[record.masechet] = [];
+        }
+        grouped[record.masechet].push(record);
+      });
+      const orderIndex = new Map(MASECHOT_DATA.map((m, index) => [m.name, index]));
+      const sortedMasechot = Object.keys(grouped).sort((a, b) => (orderIndex.get(a) ?? 999) - (orderIndex.get(b) ?? 999));
+
+      sortedMasechot.forEach(masechet => {
+        const safeMasechet = escapeHtml(masechet);
+        const card = document.createElement('div');
+        card.className = 'bg-slate-700/50 rounded-xl p-4 border border-slate-600 space-y-2';
+        const rows = grouped[masechet]
+          .slice()
+          .sort((a, b) => a.daf - b.daf)
+          .map(record => {
+            const start = formatDafNumber(record.daf);
+            const endRaw = record.daf_end ?? record.daf;
+            const end = formatDafNumber(endRaw);
+            const batchText = record.daf === endRaw ? `${start}` : `${start} עד ${end}`;
+            return `
+              <div class="bg-slate-600/50 rounded-lg p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div>
+                  <div class="font-semibold text-white">${safeMasechet}</div>
+                  <div class="text-sm text-slate-300">אצווה: ${batchText}</div>
+                  <div class="text-xs ${record.learned ? 'text-emerald-400' : 'text-blue-300'}">${record.learned ? 'נלמד' : 'משובץ'}</div>
+                </div>
+                <div class="flex gap-2">
+                  <button type="button" onclick="markAllLearnerBatchRead(${record.id})" class="px-2 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs transition-all">סמן כנלמד</button>
+                  <button type="button" onclick="deleteAllLearnerBatch(${record.id})" class="px-2 py-1 bg-red-600 hover:bg-red-500 text-white rounded text-xs transition-all">מחק</button>
+                </div>
+              </div>
+            `;
+          }).join('');
+        card.innerHTML = `<h3 class="font-bold text-amber-400">${safeMasechet}</h3>${rows}`;
+        content.appendChild(card);
+      });
+    }
+
     // ========== NAVIGATION ==========
     function goHome() {
       currentMasechet = null;
       document.getElementById('home-screen').classList.remove('hidden');
       document.getElementById('masechet-screen').classList.add('hidden');
       document.getElementById('my-pages-screen').classList.add('hidden');
+      document.getElementById('all-learners-screen').classList.add('hidden');
       renderMasechotList();
     }
 
@@ -915,6 +1286,7 @@
       document.getElementById('home-screen').classList.add('hidden');
       document.getElementById('masechet-screen').classList.remove('hidden');
       document.getElementById('my-pages-screen').classList.add('hidden');
+      document.getElementById('all-learners-screen').classList.add('hidden');
       renderMasechetScreen();
     }
 
@@ -922,7 +1294,17 @@
       document.getElementById('home-screen').classList.add('hidden');
       document.getElementById('masechet-screen').classList.add('hidden');
       document.getElementById('my-pages-screen').classList.remove('hidden');
+      document.getElementById('all-learners-screen').classList.add('hidden');
       renderMyPages();
+    }
+
+    function openAllLearners() {
+      document.getElementById('home-screen').classList.add('hidden');
+      document.getElementById('masechet-screen').classList.add('hidden');
+      document.getElementById('my-pages-screen').classList.add('hidden');
+      document.getElementById('all-learners-screen').classList.remove('hidden');
+      renderAllLearnersSelect();
+      renderAllLearnersView();
     }
 
     // ========== MODALS ==========
@@ -1574,11 +1956,12 @@
         };
         const result = await window.dataSdk.update(updateRecord);
         if (result.isOk) {
-          showToast('הפרטים עודכנו');
+          closeModal({ target: {}, currentTarget: {} });
+          showActionDoneModal('הפרטים עודכנו.');
         } else {
           showToast('שגיאה בעדכון', 'error');
+          closeModal({ target: {}, currentTarget: {} });
         }
-        closeModal({ target: {}, currentTarget: {} });
         return;
       }
       const identity = await resolveSignupIdentity(name, phone, dedication);
@@ -1612,13 +1995,14 @@
           target_daf: daf
         });
         if (result.isOk) {
-          showToast(nextLearned ? 'סומן כנלמד!' : 'בוטל סימון נלמד');
+          closeModal({ target: {}, currentTarget: {} });
+          showActionDoneModal(nextLearned ? 'הדף סומן כנלמד.' : 'סימון נלמד בוטל.');
           renderMasechetScreen();
         } else {
           showToast('שגיאה בעדכון', 'error');
+          closeModal({ target: {}, currentTarget: {} });
         }
       }
-      closeModal({ target: {}, currentTarget: {} });
     }
 
     async function toggleLearned(recordId, targetDaf) {
@@ -1635,6 +2019,7 @@
       });
       if (result.isOk) {
         updateMyPagesView();
+        showActionDoneModal(nextLearned ? 'הדף סומן כנלמד.' : 'סימון נלמד בוטל.');
       } else {
         showToast('שגיאה בעדכון', 'error');
       }
@@ -1648,12 +2033,13 @@
           target_daf: daf
         });
         if (result.isOk) {
-          showToast('השיבוץ נמחק');
+          closeModal({ target: {}, currentTarget: {} });
+          showActionDoneModal('השיבוץ נמחק.');
         } else {
           showToast('שגיאה במחיקה', 'error');
+          closeModal({ target: {}, currentTarget: {} });
         }
       }
-      closeModal({ target: {}, currentTarget: {} });
     }
 
     async function executeMasechetDelete() {
@@ -1662,9 +2048,12 @@
         closeModal({ target: {}, currentTarget: {} });
         return;
       }
-      await deleteMasechetAssignments(pending.name, pending.masechet);
+      const isOk = await deleteMasechetAssignments(pending.name, pending.masechet);
       window.pendingMasechetDelete = null;
       closeModal({ target: {}, currentTarget: {} });
+      if (isOk) {
+        showActionDoneModal('השיבוץ נמחק.');
+      }
     }
 
     async function deleteMasechetAssignments(name, masechet) {
@@ -1673,17 +2062,17 @@
       );
       if (toDelete.length === 0) {
         showToast('שיבוץ לא נמצא', 'error');
-        return;
+        return false;
       }
       for (const record of toDelete) {
         const result = await window.dataSdk.delete({ id: record.id });
         if (!result.isOk) {
           showToast('שגיאה במחיקה', 'error');
-          return;
+          return false;
         }
       }
-      showToast('השיבוץ נמחק');
       updateMyPagesView();
+      return true;
     }
 
     async function executeRangeDelete() {
@@ -1692,9 +2081,12 @@
         closeModal({ target: {}, currentTarget: {} });
         return;
       }
-      await deleteMasechetRange(pending.name, pending.masechet, pending.start, pending.end);
+      const isOk = await deleteMasechetRange(pending.name, pending.masechet, pending.start, pending.end);
       window.pendingRangeDelete = null;
       closeModal({ target: {}, currentTarget: {} });
+      if (isOk) {
+        showActionDoneModal('השיבוץ נמחק.');
+      }
     }
 
     async function executeRangeLearned() {
@@ -1703,9 +2095,12 @@
         closeModal({ target: {}, currentTarget: {} });
         return;
       }
-      await markMasechetRangeLearned(pending.name, pending.masechet, pending.start, pending.end);
+      const isOk = await markMasechetRangeLearned(pending.name, pending.masechet, pending.start, pending.end);
       window.pendingRangeLearned = null;
       closeModal({ target: {}, currentTarget: {} });
+      if (isOk) {
+        showActionDoneModal('הדפים סומנו כנלמד.');
+      }
     }
 
     async function deleteMasechetRange(name, masechet, start, end) {
@@ -1733,10 +2128,10 @@
 
       if (!deleted) {
         showToast('אין דפים למחיקה', 'error');
-        return;
+        return false;
       }
-      showToast('השיבוץ נמחק');
       updateMyPagesView();
+      return true;
     }
 
     async function markMasechetRangeLearned(name, masechet, start, end) {
@@ -1757,16 +2152,16 @@
         });
         if (!result.isOk) {
           showToast('שגיאה בעדכון', 'error');
-          return;
+          return false;
         }
         updated = true;
       }
       if (!updated) {
         showToast('אין דפים לעדכון', 'error');
-        return;
+        return false;
       }
-      showToast('הדפים סומנו כנלמד');
       updateMyPagesView();
+      return true;
     }
 
     // ========== CONFIG RENDER ==========
@@ -1785,6 +2180,10 @@
         renderMasechotList();
         if (currentMasechet) {
           renderMasechetScreen();
+        }
+        if (!document.getElementById('all-learners-screen').classList.contains('hidden')) {
+          renderAllLearnersSelect();
+          renderAllLearnersView();
         }
       }
     };
@@ -1923,6 +2322,9 @@
     window.dataSdk.init(dataHandler).then(result => {
       if (!result.isOk) {
         console.error("Failed to initialize data");
+      }
+      if (window.location.pathname === '/dafdaf') {
+        openAllLearners();
       }
     });
   </script>

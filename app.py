@@ -434,7 +434,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._serve_ics(parsed)
             return
         if path == "/dafdaf":
-            self._serve_backup_page()
+            self._serve_html()
             return
         if path == "/dafdaf/export":
             self._serve_backup_export()
