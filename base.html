@@ -211,6 +211,13 @@
     { seder:"טהרות",  name:"נדה",         dafim:73  },
   ];
   const TOTAL_DAFIM = 2711;
+  const TRACTATE_PREVIEW_COLUMNS = {
+    largeDafim: 140,
+    mediumDafim: 90,
+    largeCols: 16,
+    mediumCols: 14,
+    compactCols: 12,
+  };
 
   const SEDER_COLORS = {
     'זרעים':  { bg:'bg-emerald-600', hover:'hover:bg-emerald-500', hex:'#059669', theme:'seder-zeraim' },
@@ -973,7 +980,11 @@
 
   const TractateCard = ({ mas, selected, onOpen }) => {
     const color = SEDER_COLORS[mas.seder] || FALLBACK_SEDER_COLOR;
-    const previewColumns = mas.dafim >= 140 ? 16 : mas.dafim >= 90 ? 14 : 12;
+    const previewColumns = mas.dafim >= TRACTATE_PREVIEW_COLUMNS.largeDafim
+      ? TRACTATE_PREVIEW_COLUMNS.largeCols
+      : mas.dafim >= TRACTATE_PREVIEW_COLUMNS.mediumDafim
+        ? TRACTATE_PREVIEW_COLUMNS.mediumCols
+        : TRACTATE_PREVIEW_COLUMNS.compactCols;
     return (
       <button
         type="button"
@@ -1181,6 +1192,7 @@
     const handleModalDafClick = (masechet, daf) => {
       if (selectionMode) { toggleSelection(masechet, daf); return; }
       const a = getAssignment(masechet, daf);
+      setMasechetTarget(null);
       if (!a) { setAssignTarget({masechet, daf}); }
       else { setViewTarget({masechet, daf, assignment:a}); }
     };
