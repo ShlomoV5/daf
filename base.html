@@ -191,6 +191,57 @@
     for (let d=2; d<=mas.dafim+1; d++) { if (!getAssignment(masechet,d)) free.push(d); }
     return free;
   }
+  function getAssignedDafim(masechet) {
+    return [...new Set(G.assignments.filter(a=>a.masechet===masechet).map(a=>a.daf))].sort((a,b)=>a-b);
+  }
+  function getFreeBlocks(masechet) {
+    return buildDafRanges(getFreeDafim(masechet)).map(r=>({ ...r, length:r.end-r.start+1 }));
+  }
+  function getMasechetStats(masechet) {
+    const mas = MASECHOT_DATA.find(m=>m.name===masechet);
+    const assigned = getAssignedDafim(masechet);
+    const learned = new Set(G.assignments.filter(a=>a.masechet===masechet && a.learned).map(a=>a.daf)).size;
+    const freeBlocks = getFreeBlocks(masechet);
+    return {
+      mas,
+      assigned: assigned.length,
+      learned,
+      free: Math.max(0, (mas?.dafim || 0) - assigned.length),
+      freeBlocks,
+    };
+  }
+  function buildAutoAssignRecords(count, identity) {
+    let remaining = Math.max(1, parseInt(count, 10) || 1);
+    const records = [];
+    const assignmentCounts = new Map(MASECHOT_DATA.map(m=>[m.name, getAssignedDafim(m.name).length]));
+    const partiallyStarted = MASECHOT_DATA.filter(m=>{
+      const assigned = assignmentCounts.get(m.name) || 0;
+      return assigned > 0 && assigned < m.dafim;
+    });
+    const notStarted = MASECHOT_DATA.filter(m=>(assignmentCounts.get(m.name) || 0) === 0);
+    const consume = blockList => {
+      for (const { masechet, start, end } of blockList) {
+        if (remaining <= 0) break;
+        const take = Math.min(remaining, end - start + 1);
+        records.push({
+          masechet,
+          daf: start,
+          daf_end: start + take - 1,
+          name: identity.name,
+          phone: identity.phone,
+          dedication: identity.dedication,
+          learned: false,
+          is_full_masechet: false,
+        });
+        remaining -= take;
+      }
+    };
+    consume(partiallyStarted.flatMap(m=>getFreeBlocks(m.name).map(block=>({ masechet:m.name, start:block.start, end:block.end }))));
+    if (remaining > 0) {
+      consume(notStarted.map(m=>({ masechet:m.name, start:2, end:m.dafim+1 })));
+    }
+    return records;
+  }
 
   // ─── API / SDK ────────────────────────────────────────────────────────────────
   async function refreshAssignments() {
@@ -302,15 +353,16 @@
   const IcBook    = ()=><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25"/></svg>;
 
   // ─── MODAL SHELL ─────────────────────────────────────────────────────────────
-  const Modal = ({ onClose, children, wide=false }) => (
-    <div className="modal-bg fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+  const Modal = ({ onClose, children, wide=false }) => ReactDOM.createPortal(
+    <div className="modal-bg fixed inset-0 z-[100] flex items-center justify-center p-4" onClick={onClose}>
       <div
-        className={`bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl w-full ${wide?'max-w-lg':'max-w-sm'} max-h-[85vh] overflow-auto animate-fade-in`}
+        className={`bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl w-full ${wide?'max-w-4xl':'max-w-sm'} max-h-[90vh] overflow-auto animate-fade-in`}
         onClick={e=>e.stopPropagation()}
       >
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 
   // ─── CONFIRM MODAL ────────────────────────────────────────────────────────────
@@ -459,14 +511,10 @@
   // ─── AUTO ASSIGN MODAL ────────────────────────────────────────────────────────
   const AutoAssignModal = ({ onClose, onSuccess }) => {
     const draft = G.signupDraft || {};
-    const [mode,setMode]=React.useState(null); // 'masechet' | 'pages'
     const [name,setName]=React.useState(draft.name || '');
     const [phone,setPhone]=React.useState(draft.phone || '');
     const [dedication,setDedication]=React.useState(draft.dedication || '');
     const [count,setCount]=React.useState(1);
-    const takenMasechot = new Set(G.assignmentRanges.filter(a=>a.is_full_masechet).map(a=>a.masechet));
-    const firstFree = MASECHOT_DATA.find(m=>!takenMasechot.has(m.name))?.name || MASECHOT_DATA[0].name;
-    const [selectedMas,setSelectedMas]=React.useState(firstFree);
     const [pending,setPending]=React.useState(null);
     const [loading,setLoading]=React.useState(false);
 
@@ -479,31 +527,11 @@
       return identity;
     };
 
-    const handleMasechet = e => {
-      e.preventDefault();
-      const id=validate(); if(!id) return;
-      if (takenMasechot.has(selectedMas)) { showToast('מסכת זו כבר הוקצתה','error'); return; }
-      const mas=MASECHOT_DATA.find(m=>m.name===selectedMas);
-      setPending({ type:'masechet', identity:id, records:[{masechet:selectedMas,daf:2,daf_end:mas.dafim+1,name:id.name,phone:id.phone,dedication:id.dedication,learned:false,is_full_masechet:true}] });
-    };
-
     const handlePages = e => {
       e.preventDefault();
       const id=validate(); if(!id) return;
-      const n=Math.max(1,parseInt(count)||1);
-      // collect free dafim
-      const free=[];
-      const partial = MASECHOT_DATA.filter(m=>{ const ma=G.assignments.filter(a=>a.masechet===m.name); return ma.length>0&&ma.length<m.dafim; });
-      for (const m of partial) { for (let d=2;d<=m.dafim+1;d++) { if(!getAssignment(m.name,d)) free.push({masechet:m.name,daf:d}); } }
-      for (const m of MASECHOT_DATA) { if(!partial.includes(m)) for (let d=2;d<=m.dafim+1;d++) { if(!getAssignment(m.name,d)) free.push({masechet:m.name,daf:d}); } }
-      const toAssign=free.slice(0,n);
-      if (!toAssign.length) { showToast('אין דפים פנויים','error'); return; }
-      const grouped={};
-      toAssign.forEach(({masechet,daf})=>{if(!grouped[masechet])grouped[masechet]=[];grouped[masechet].push(daf);});
-      const records=[];
-      Object.entries(grouped).forEach(([m,dafs])=>{
-        buildDafRanges(dafs).forEach(r=>records.push({masechet:m,daf:r.start,daf_end:r.end,name:id.name,phone:id.phone,dedication:id.dedication,learned:false,is_full_masechet:false}));
-      });
+      const records = buildAutoAssignRecords(count, id);
+      if (!records.length) { showToast('אין דפים פנויים','error'); return; }
       setPending({ type:'pages', identity:id, records });
     };
 
@@ -530,68 +558,28 @@
       </Modal>
     );
 
-    if (!mode) return (
-      <Modal onClose={onClose}>
-        <div className="p-5 space-y-3">
-          <h3 className="text-lg font-bold text-amber-400">הצע לי דפים</h3>
-          <button onClick={()=>setMode('masechet')} className="w-full bg-purple-600 hover:bg-purple-500 text-white font-semibold py-3 rounded-xl transition-all text-sm">🏆 מסכת שלימה</button>
-          <button onClick={()=>setMode('pages')} className="w-full bg-purple-600 hover:bg-purple-500 text-white font-semibold py-3 rounded-xl transition-all text-sm">📄 מספר דפים</button>
-          <button onClick={onClose} className="w-full bg-slate-600 hover:bg-slate-500 text-white font-semibold py-2 rounded-xl transition-all text-sm">ביטול</button>
-        </div>
-      </Modal>
-    );
-
-    const commonFields = (
-      <>
-        <div>
-          <label className="block text-xs font-medium text-slate-300 mb-1">שם *</label>
-          <input type="text" required value={name} onChange={e=>setName(e.target.value)} className="w-full bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-white text-sm focus:border-amber-500 focus:outline-none" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-slate-300 mb-1">טלפון *</label>
-          <input type="tel" inputMode="numeric" required value={phone} onChange={e=>setPhone(e.target.value)} placeholder="05XXXXXXXX" className="w-full bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-white text-sm focus:border-amber-500 focus:outline-none" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-slate-300 mb-1">הקדשה / הערה</label>
-          <textarea value={dedication} onChange={e=>setDedication(e.target.value)} rows={2} placeholder="לעילוי נשמת / לרפואה שלמה..." className="w-full bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-white text-sm focus:border-amber-500 focus:outline-none resize-none" />
-        </div>
-      </>
-    );
-
-    if (mode==='masechet') return (
-      <Modal onClose={onClose}>
-        <div className="p-5 space-y-3">
-          <div className="flex items-center gap-2 mb-1">
-            <button onClick={()=>setMode(null)} className="text-slate-400 hover:text-white text-xs">← חזרה</button>
-            <h3 className="text-lg font-bold text-amber-400">מסכת שלימה</h3>
-          </div>
-          <form onSubmit={handleMasechet} className="space-y-3">
-            {commonFields}
-            <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1">בחר מסכת</label>
-              <select value={selectedMas} onChange={e=>setSelectedMas(e.target.value)} className="w-full bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-white text-sm focus:border-amber-500 focus:outline-none">
-                {MASECHOT_DATA.map(m=><option key={m.name} value={m.name} disabled={takenMasechot.has(m.name)}>{m.name} ({m.dafim} דפים){takenMasechot.has(m.name)?' - שובצה':''}</option>)}
-              </select>
-            </div>
-            <button type="submit" className="w-full bg-purple-600 hover:bg-purple-500 text-white font-semibold py-2 rounded-xl transition-all text-sm">קח מסכת שלימה</button>
-          </form>
-        </div>
-      </Modal>
-    );
-
     return (
       <Modal onClose={onClose}>
         <div className="p-5 space-y-3">
-          <div className="flex items-center gap-2 mb-1">
-            <button onClick={()=>setMode(null)} className="text-slate-400 hover:text-white text-xs">← חזרה</button>
-            <h3 className="text-lg font-bold text-amber-400">מספר דפים</h3>
-          </div>
+          <h3 className="text-lg font-bold text-amber-400">הצע לי דפים</h3>
           <form onSubmit={handlePages} className="space-y-3">
-            {commonFields}
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1">שם *</label>
+              <input type="text" required value={name} onChange={e=>setName(e.target.value)} className="w-full bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-white text-sm focus:border-amber-500 focus:outline-none" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1">טלפון *</label>
+              <input type="tel" inputMode="numeric" required value={phone} onChange={e=>setPhone(e.target.value)} placeholder="05XXXXXXXX" className="w-full bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-white text-sm focus:border-amber-500 focus:outline-none" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1">הקדשה / הערה</label>
+              <textarea value={dedication} onChange={e=>setDedication(e.target.value)} rows={2} placeholder="לעילוי נשמת / לרפואה שלמה..." className="w-full bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-white text-sm focus:border-amber-500 focus:outline-none resize-none" />
+            </div>
             <div>
               <label className="block text-xs font-medium text-slate-300 mb-1">כמה דפים?</label>
               <input type="number" min={1} max={200} value={count} onChange={e=>setCount(e.target.value)} className="w-full bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-white text-sm focus:border-amber-500 focus:outline-none" />
             </div>
+            <p className="text-xs text-slate-400">נציע קודם דפים פנויים במסכתות שכבר התחילו, ואז נמשיך למסכתות שטרם התחילו.</p>
             <button type="submit" className="w-full bg-purple-600 hover:bg-purple-500 text-white font-semibold py-2 rounded-xl transition-all text-sm">מצא לי דפים</button>
           </form>
         </div>
@@ -836,16 +824,17 @@
         {/* Modals */}
         {modal==='signup' && <SignupEntryModal
           onClose={()=>setModal(null)}
-          onContinue={(nextMode)=>setModal(nextMode)}
+          onContinue={(nextMode)=>{
+            if (nextMode==='auto') setModal('auto');
+            else {
+              setModal(null);
+              navigate('shasmap', { selectionMode:true });
+            }
+          }}
         />}
         {modal==='auto' && <AutoAssignModal
           onClose={()=>setModal(null)}
           onSuccess={handleSuccess}
-        />}
-        {modal==='range' && <RangeAssignModal
-          onClose={()=>setModal(null)}
-          onSuccess={handleSuccess}
-          assignments={assignments}
         />}
         {success && <SuccessModal name={success.name} assignments={success.recs} onClose={()=>setSuccess(null)} />}
       </div>
@@ -853,19 +842,102 @@
   };
 
   // ─── SHAS MAP VIEW ────────────────────────────────────────────────────────────
-  const ShasMapView = ({ navigate, assignments }) => {
+  const ShasMapView = ({ navigate, assignments, selectionMode=false }) => {
     const [assignTarget,setAssignTarget]=React.useState(null); // {masechet,daf}
     const [viewTarget,setViewTarget]=React.useState(null); // {masechet,daf,assignment}
+    const [masechetTarget,setMasechetTarget]=React.useState(null);
     const [success,setSuccess]=React.useState(null);
+    const [selected,setSelected]=React.useState(new Set());
+    const [rangeStart,setRangeStart]=React.useState(null);
+    const [pendingSelection,setPendingSelection]=React.useState(null);
+    const [loading,setLoading]=React.useState(false);
+    const signupIdentity = G.signupDraft;
+
+    const resetSelection = () => {
+      setSelected(new Set());
+      setRangeStart(null);
+    };
+
+    const buildSelectionRecords = () => {
+      const items = [...selected].map(id => {
+        const [masechet, daf] = id.split('|');
+        return { masechet, daf:parseInt(daf,10) };
+      });
+      const grouped = {};
+      items.forEach(({masechet,daf}) => {
+        if (!grouped[masechet]) grouped[masechet] = [];
+        grouped[masechet].push(daf);
+      });
+      return Object.entries(grouped).flatMap(([masechet,dafim]) =>
+        buildDafRanges(dafim).map(r=>({
+          masechet,
+          daf:r.start,
+          daf_end:r.end,
+          name:signupIdentity.name,
+          phone:signupIdentity.phone,
+          dedication:signupIdentity.dedication || '',
+          learned:false,
+          is_full_masechet:false,
+        }))
+      );
+    };
+
+    const handleSelectionContinue = () => {
+      if (!signupIdentity?.name || !signupIdentity?.phone) { showToast('אנא הזן פרטים לפני בחירת דפים','error'); return; }
+      if (!selected.size) { showToast('יש לבחור לפחות דף אחד','error'); return; }
+      setPendingSelection({ identity:signupIdentity, records:buildSelectionRecords() });
+    };
+
+    const executeSelection = async () => {
+      setLoading(true);
+      const result = await window.dataSdk.createBulk(pendingSelection.records,{skipRefresh:true});
+      if (result.isOk) {
+        await refreshAssignments();
+        setLoading(false);
+        setPendingSelection(null);
+        resetSelection();
+        setSuccess({name:pendingSelection.identity.name,recs:pendingSelection.records});
+      } else {
+        showToast('שגיאה בשיבוץ','error');
+        setLoading(false);
+      }
+    };
+
+    const toggleSelection = (masechet, daf) => {
+      if (getAssignment(masechet, daf)) { showToast('דף זה כבר תפוס','info'); return; }
+      const next = new Set(selected);
+      const addDaf = value => next.add(`${masechet}|${value}`);
+      const removeDaf = value => next.delete(`${masechet}|${value}`);
+      if (!rangeStart) {
+        const id = `${masechet}|${daf}`;
+        if (next.has(id)) removeDaf(daf);
+        else addDaf(daf);
+        setRangeStart({ masechet, daf });
+      } else if (rangeStart.masechet===masechet) {
+        const start = Math.min(rangeStart.daf, daf);
+        const end = Math.max(rangeStart.daf, daf);
+        for (let d=start; d<=end; d++) {
+          if (!getAssignment(masechet,d)) addDaf(d);
+        }
+        setRangeStart(null);
+      } else {
+        const id = `${masechet}|${daf}`;
+        if (next.has(id)) removeDaf(daf);
+        else addDaf(daf);
+        setRangeStart({ masechet, daf });
+      }
+      setSelected(next);
+    };
 
     const handleDafClick = (masechet, daf) => {
+      if (selectionMode) { toggleSelection(masechet, daf); return; }
       const a = getAssignment(masechet, daf);
       if (!a) { setAssignTarget({masechet, daf}); }
       else { setViewTarget({masechet, daf, assignment:a}); }
     };
 
     return (
-      <div className="flex flex-col h-screen bg-slate-900 animate-fade-in overflow-hidden">
+      <div className="flex flex-col min-h-screen bg-slate-900 animate-fade-in">
         {/* Header */}
         <div className="bg-slate-800/95 border-b border-slate-700 z-40 flex-shrink-0">
           <div className="max-w-full px-4 py-3 flex items-center justify-between">
@@ -886,36 +958,59 @@
             <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded inline-block bg-blue-500" /> משובץ</span>
             <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded inline-block bg-slate-600 border border-slate-500" /> פנוי</span>
           </div>
+          {selectionMode && (
+            <div className="px-4 pb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs">
+              <div className="text-amber-200 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2">
+                בחר דף, או בחר דף ראשון ואחרון לטווח.
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={resetSelection} className="px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-white">נקה בחירה</button>
+                <button onClick={handleSelectionContinue} disabled={!selected.size} className="px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white font-semibold">
+                  המשך עם {selected.size} דפים
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Worms container */}
-        <div className="flex-1 overflow-x-auto overflow-y-hidden hide-scrollbar px-3 py-4">
-          <div className="flex gap-4 items-start h-full" style={{minWidth:'max-content'}}>
+        <div className="flex-1 overflow-y-auto px-3 py-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4 items-start">
             {MASECHOT_DATA.map(mas=>{
               const color = SEDER_COLORS[mas.seder];
+              const stats = getMasechetStats(mas.name);
 
               return (
-                <div key={mas.name} className="flex flex-col gap-2 flex-shrink-0">
-                  <div className="flex items-center justify-between px-2 text-xs">
-                    <span className="font-bold text-white whitespace-nowrap">{mas.name}</span>
-                    <span className="text-slate-400">{mas.dafim}</span>
+                <div key={mas.name} className="flex flex-col gap-2 rounded-3xl border border-slate-700 bg-slate-800/60 p-3">
+                  <div className="flex items-center justify-between gap-3 px-1 text-xs">
+                    <button onClick={()=>setMasechetTarget(mas.name)} className="font-bold text-white whitespace-nowrap text-sm hover:text-amber-300 transition-colors">
+                      {mas.name}
+                    </button>
+                    <div className="text-slate-400 text-left">
+                      <div>{mas.dafim} דפים</div>
+                      <div>{stats.free} פנויים</div>
+                    </div>
                   </div>
-                  <div className="worm-frame rounded-full border-2 bg-slate-800/90 px-2 py-2" style={{borderColor:color.hex}}>
-                    <div className="flex items-center gap-1">
+                  <button type="button" onClick={()=>setMasechetTarget(mas.name)} className="text-right text-[11px] text-slate-400 hover:text-slate-200 transition-colors">
+                    {mas.seder} · {stats.learned} נלמדו · {stats.assigned} שובצו
+                  </button>
+                  <div className="worm-frame rounded-3xl border-2 bg-slate-800/90 px-2 py-2" style={{borderColor:color.hex}} onClick={()=>setMasechetTarget(mas.name)}>
+                    <div className="flex flex-wrap gap-1">
                       {Array.from({length:mas.dafim},(_, i)=>i+2).map(d=>{
                         const st=getDafStatus(mas.name,d);
                         let cls='bg-slate-700 border border-slate-500 text-slate-400';
                         if (st==='learned') cls='bg-emerald-500 border border-emerald-400 text-white';
                         else if (st==='assigned') cls='bg-blue-500 border border-blue-400 text-white';
+                        const isSelected = selected.has(`${mas.name}|${d}`);
+                        if (isSelected) cls='bg-amber-500 border border-amber-300 ring-2 ring-amber-300';
                         return (
                           <button
                             key={d}
-                            onClick={()=>handleDafClick(mas.name,d)}
+                            onClick={e=>{ e.stopPropagation(); handleDafClick(mas.name,d); }}
                             title={`${mas.name} דף ${formatDaf(d)}`}
-                            className={`worm-pixel w-4 h-4 rounded-[4px] flex items-center justify-center text-[8px] font-bold shrink-0 ${cls}`}
-                          >
-                            {formatDaf(d)}
-                          </button>
+                            aria-label={`${mas.name} דף ${formatDaf(d)}`}
+                            className={`worm-pixel w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-[4px] flex items-center justify-center shrink-0 ${cls}`}
+                          />
                         );
                       })}
                     </div>
@@ -949,7 +1044,51 @@
             </div>
           </Modal>
         )}
-        {success && <SuccessModal name={success.name} assignments={success.recs} onClose={()=>setSuccess(null)} />}
+        {masechetTarget && (
+          <Modal onClose={()=>setMasechetTarget(null)}>
+            <div className="p-5 space-y-4">
+              {(()=>{
+                const stats = getMasechetStats(masechetTarget);
+                return (
+                  <>
+                    <div className="space-y-1">
+                      <h3 className="text-lg font-bold text-amber-400">{masechetTarget}</h3>
+                      <p className="text-sm text-slate-300">{stats.mas?.seder} · {stats.mas?.dafim} דפים</p>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                      <div className="bg-slate-700/60 rounded-xl py-2"><div className="text-white font-bold">{stats.assigned}</div><div className="text-slate-400">שובצו</div></div>
+                      <div className="bg-slate-700/60 rounded-xl py-2"><div className="text-emerald-400 font-bold">{stats.learned}</div><div className="text-slate-400">נלמדו</div></div>
+                      <div className="bg-slate-700/60 rounded-xl py-2"><div className="text-amber-300 font-bold">{stats.free}</div><div className="text-slate-400">פנויים</div></div>
+                    </div>
+                    <div className="bg-slate-700/60 rounded-xl p-3 text-sm text-slate-200 space-y-2">
+                      <div className="font-semibold text-white">טווחים פנויים</div>
+                      {stats.freeBlocks.length ? (
+                        <div className="text-xs leading-6">{stats.freeBlocks.map(r=>`${formatDaf(r.start)}-${formatDaf(r.end)}`).join(' , ')}</div>
+                      ) : (
+                        <div className="text-xs text-slate-400">אין דפים פנויים במסכת זו</div>
+                      )}
+                    </div>
+                    <button onClick={()=>setMasechetTarget(null)} className="w-full bg-slate-600 hover:bg-slate-500 text-white font-semibold py-2 rounded-xl transition-all text-sm">סגור</button>
+                  </>
+                );
+              })()}
+            </div>
+          </Modal>
+        )}
+        {pendingSelection && (
+          <Modal onClose={()=>setPendingSelection(null)}>
+            <div className="p-5 space-y-4">
+              <h3 className="text-lg font-bold text-amber-400">אישור שיבוץ</h3>
+              <p className="text-white text-sm">שם: {pendingSelection.identity.name}</p>
+              <div className="bg-slate-700/60 rounded-xl p-3 text-sm text-white space-y-1" dangerouslySetInnerHTML={{__html: buildAssignmentDetails(pendingSelection.records).html}} />
+              <div className="flex gap-3">
+                <button onClick={()=>{setPendingSelection(null);setLoading(false);}} className="flex-1 bg-slate-600 hover:bg-slate-500 text-white font-semibold py-2 rounded-xl transition-all text-sm">ביטול</button>
+                <button onClick={executeSelection} disabled={loading} className="flex-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-semibold py-2 rounded-xl transition-all text-sm">{loading?'משבץ...':'אשר'}</button>
+              </div>
+            </div>
+          </Modal>
+        )}
+        {success && <SuccessModal name={success.name} assignments={success.recs} onClose={()=>{ setSuccess(null); if (selectionMode) navigate('home'); }} />}
       </div>
     );
   };
@@ -1191,7 +1330,7 @@
 
   // ─── APP ROOT ─────────────────────────────────────────────────────────────────
   const App = () => {
-    const [view,setView]=React.useState('home');
+    const [viewState,setViewState]=React.useState({ name:'home', selectionMode:false });
     const [assignments,setAssignments]=React.useState([]);
     const [config,setConfig]=React.useState({...defaultConfig});
     const totalAssigned = assignments.length;
@@ -1203,14 +1342,14 @@
       fetch('/api/config').then(r=>r.ok?r.json():null).then(d=>{ if(d) setConfig(c=>({...c,...d})); }).catch(()=>{});
     },[]);
 
-    const navigate = v => { setView(v); window.scrollTo(0,0); };
+    const navigate = (name, extras={}) => { setViewState({ name, ...extras }); window.scrollTo(0,0); };
 
     return (
       <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800">
         <Header config={config} navigate={navigate} />
-        {view==='home' && <Dashboard navigate={navigate} assignments={assignments} totalAssigned={totalAssigned} totalLearned={totalLearned} />}
-        {view==='shasmap' && <ShasMapView navigate={navigate} assignments={assignments} />}
-        {view==='mypages' && <MyPagesView navigate={navigate} />}
+        {viewState.name==='home' && <Dashboard navigate={navigate} assignments={assignments} totalAssigned={totalAssigned} totalLearned={totalLearned} />}
+        {viewState.name==='shasmap' && <ShasMapView navigate={navigate} assignments={assignments} selectionMode={Boolean(viewState.selectionMode)} />}
+        {viewState.name==='mypages' && <MyPagesView navigate={navigate} />}
       </div>
     );
   };
