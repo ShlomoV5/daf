@@ -19,6 +19,44 @@
       transition: all 0.15s ease;
     }
     .daf-cell:hover { transform: scale(1.1); z-index: 10; }
+    /* ── Masechet detail grid (matches base.html MasechetDetailModal) ── */
+    .tractate-daf-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(44px, 1fr));
+      gap: 8px;
+      direction: rtl;
+    }
+    .tractate-daf-cell {
+      --seder-color: #64748b;
+      --seder-color-soft: rgba(100, 116, 139, 0.18);
+      --seder-border-color: rgba(148, 163, 184, 0.85);
+      min-height: 44px;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: 13px;
+      border: 1px solid transparent;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: transform 0.14s ease, box-shadow 0.14s ease, border-color 0.14s ease;
+    }
+    .tractate-daf-cell:hover { transform: translateY(-1px); }
+    .daf-state-free    { background: var(--seder-color-soft); border-color: var(--seder-border-color); color: rgb(226 232 240); }
+    .daf-state-assigned { background: rgba(37, 99, 235, 0.88); border-color: #bfdbfe; color: white; }
+    .daf-state-learned  { background: rgba(16, 185, 129, 0.9);  border-color: #a7f3d0; color: white; }
+    .seder-zeraim   { --seder-color: #059669; --seder-color-soft: rgba(5,150,105,0.13);   --seder-border-color: rgba(5,150,105,0.7);   }
+    .seder-moed     { --seder-color: #2563eb; --seder-color-soft: rgba(37,99,235,0.13);   --seder-border-color: rgba(37,99,235,0.7);   }
+    .seder-nashim   { --seder-color: #c026d3; --seder-color-soft: rgba(192,38,211,0.13);  --seder-border-color: rgba(192,38,211,0.7);  }
+    .seder-nezikin  { --seder-color: #dc2626; --seder-color-soft: rgba(220,38,38,0.13);   --seder-border-color: rgba(220,38,38,0.7);   }
+    .seder-kodashim { --seder-color: #ea580c; --seder-color-soft: rgba(234,88,12,0.13);   --seder-border-color: rgba(234,88,12,0.7);   }
+    .seder-taharot  { --seder-color: #0d9488; --seder-color-soft: rgba(13,148,136,0.13);  --seder-border-color: rgba(13,148,136,0.7);  }
+    .seder-badge-zeraim   { background: #059669; }
+    .seder-badge-moed     { background: #2563eb; }
+    .seder-badge-nashim   { background: #c026d3; }
+    .seder-badge-nezikin  { background: #dc2626; }
+    .seder-badge-kodashim { background: #ea580c; }
+    .seder-badge-taharot  { background: #0d9488; }
     .modal-backdrop { background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); }
     .toast { animation: slideIn 0.3s ease, fadeOut 0.3s ease 2.7s; }
     @keyframes slideIn { from { transform: translateY(-100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
@@ -151,19 +189,37 @@
           חזרה לרשימה
         </button>
         
-        <div class="bg-slate-700/50 rounded-xl p-4 mb-4 border border-slate-600">
-          <h2 id="masechet-title" class="text-xl font-bold text-amber-400 mb-2"></h2>
-          <div class="flex gap-4 text-sm">
-            <span id="masechet-free" class="text-slate-400"></span>
-            <span id="masechet-assigned" class="text-blue-400"></span>
-            <span id="masechet-learned" class="text-emerald-400"></span>
+        <div class="space-y-4">
+          <!-- Header: name + seder badge + stats (matches MasechetDetailModal) -->
+          <div class="flex items-start justify-between gap-3">
+            <div class="space-y-1">
+              <div class="flex flex-wrap items-center gap-2">
+                <h2 id="masechet-title" class="text-xl font-bold text-white"></h2>
+                <span id="masechet-seder-badge" class="px-2 py-1 rounded-full text-xs font-semibold text-white" style="display:none"></span>
+              </div>
+              <p id="masechet-dafim-total" class="text-sm text-slate-300"></p>
+            </div>
           </div>
-          <div class="h-2 bg-slate-600 rounded-full overflow-hidden mt-3">
-            <div id="masechet-progress" class="h-full bg-gradient-to-r from-blue-500 to-emerald-500 transition-all duration-300" style="width: 0%"></div>
-          </div>
-        </div>
 
-        <div id="daf-grid" class="grid grid-cols-7 sm:grid-cols-10 gap-1"></div>
+          <!-- Stats grid (3 cols) -->
+          <div class="grid grid-cols-3 gap-2 text-center text-xs">
+            <div class="bg-slate-700/60 rounded-xl py-2">
+              <div id="masechet-assigned" class="text-white font-bold"></div>
+              <div class="text-slate-400">נתפסו</div>
+            </div>
+            <div class="bg-slate-700/60 rounded-xl py-2">
+              <div id="masechet-learned" class="text-emerald-400 font-bold"></div>
+              <div class="text-slate-400">נלמדו</div>
+            </div>
+            <div class="bg-slate-700/60 rounded-xl py-2">
+              <div id="masechet-free" class="text-amber-300 font-bold"></div>
+              <div class="text-slate-400">פנויים</div>
+            </div>
+          </div>
+
+          <!-- Daf grid -->
+          <div id="daf-grid" class="tractate-daf-grid"></div>
+        </div>
       </div>
 
       <!-- My Pages Screen (hidden by default) -->
@@ -260,6 +316,15 @@
     ];
 
     const TOTAL_DAFIM = 2711;
+
+    const SEDER_COLORS = {
+      'זרעים':  { theme: 'seder-zeraim',   badge: 'seder-badge-zeraim'   },
+      'מועד':   { theme: 'seder-moed',     badge: 'seder-badge-moed'     },
+      'נשים':   { theme: 'seder-nashim',   badge: 'seder-badge-nashim'   },
+      'נזיקין': { theme: 'seder-nezikin',  badge: 'seder-badge-nezikin'  },
+      'קדשים':  { theme: 'seder-kodashim', badge: 'seder-badge-kodashim' },
+      'טהרות':  { theme: 'seder-taharot',  badge: 'seder-badge-taharot'  },
+    };
 
     let assignmentRanges = [];
     let assignments = [];
@@ -752,32 +817,45 @@
     function renderMasechetScreen() {
       const mas = MASECHOT_DATA.find(m => m.name === currentMasechet);
       if (!mas) return;
-      
+
       const masAssignments = assignments.filter(a => a.masechet === mas.name);
       const learned = masAssignments.filter(a => a.learned).length;
       const assigned = masAssignments.length - learned;
       const free = mas.dafim - masAssignments.length;
-      const progress = (masAssignments.length / mas.dafim) * 100;
-      
+
       document.getElementById('masechet-title').textContent = mas.name;
-      document.getElementById('masechet-free').textContent = `${free} פנוי`;
-      document.getElementById('masechet-assigned').textContent = `${assigned} משובץ`;
-      document.getElementById('masechet-learned').textContent = `${learned} נלמד`;
-      document.getElementById('masechet-progress').style.width = `${progress}%`;
-      
+      document.getElementById('masechet-dafim-total').textContent = `${mas.dafim} דפים במסכת`;
+      document.getElementById('masechet-free').textContent = free;
+      document.getElementById('masechet-assigned').textContent = assigned;
+      document.getElementById('masechet-learned').textContent = learned;
+
+      const badge = document.getElementById('masechet-seder-badge');
+      const sederColor = SEDER_COLORS[mas.seder];
+      if (sederColor) {
+        badge.textContent = mas.seder;
+        badge.className = `px-2 py-1 rounded-full text-xs font-semibold text-white ${sederColor.badge}`;
+        badge.style.display = '';
+      } else {
+        badge.style.display = 'none';
+      }
+
+      const sederTheme = sederColor ? sederColor.theme : '';
       const grid = document.getElementById('daf-grid');
       grid.innerHTML = '';
-      
+
       for (let daf = 2; daf <= mas.dafim + 1; daf++) {
         const status = getDafStatus(mas.name, daf);
         const assignment = getAssignment(mas.name, daf);
-        
-        const cell = document.createElement('div');
-        cell.className = `daf-cell rounded-lg flex items-center justify-center cursor-pointer font-medium ${getStatusColor(status)}`;
+
+        const cell = document.createElement('button');
+        cell.type = 'button';
+        cell.className = `tractate-daf-cell ${sederTheme} daf-state-${status}`.trim();
         cell.textContent = formatDafNumber(daf);
-        cell.title = assignment ? `${assignment.name}${assignment.dedication ? ' - ' + assignment.dedication : ''}` : `דף ${formatDafNumber(daf)} - פנוי`;
+        cell.title = assignment
+          ? `${assignment.name}${assignment.dedication ? ' – ' + assignment.dedication : ''}`
+          : `${mas.name} · דף ${formatDafNumber(daf)}`;
         cell.onclick = () => openDafModal(mas.name, daf);
-        
+
         grid.appendChild(cell);
       }
     }
