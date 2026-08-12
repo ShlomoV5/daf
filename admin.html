@@ -1225,7 +1225,7 @@
             const result = await window.dataSdk.update({ id: rec.id, learned: true }, { skipRefresh: true });
             if (!result.isOk) { showWaitOverlay(false); showToast('שגיאה בעדכון', 'error'); return; }
           } else {
-            const result = await window.dataSdk.delete({ id: rec.id });
+            const result = await window.dataSdk.delete({ id: rec.id }, { skipRefresh: true });
             if (!result.isOk) { showWaitOverlay(false); showToast('שגיאה במחיקה', 'error'); return; }
             const allDafim = Array.from({ length: recEnd - recStart + 1 }, (_, i) => recStart + i);
             const overlapSet = new Set(Array.from({ length: overlapEnd - overlapStart + 1 }, (_, i) => overlapStart + i));
@@ -1254,7 +1254,7 @@
           const recStart = rec.daf, recEnd = rec.daf_end ?? rec.daf;
           const overlapStart = Math.max(rangeStart, recStart), overlapEnd = Math.min(rangeEnd, recEnd);
           if (overlapStart > overlapEnd) continue;
-          const result = await window.dataSdk.delete({ id: rec.id });
+          const result = await window.dataSdk.delete({ id: rec.id }, { skipRefresh: true });
           if (!result.isOk) { showWaitOverlay(false); showToast('שגיאה במחיקה', 'error'); return; }
           const allDafim = Array.from({ length: recEnd - recStart + 1 }, (_, i) => recStart + i);
           const delSet = new Set(Array.from({ length: overlapEnd - overlapStart + 1 }, (_, i) => overlapStart + i));
