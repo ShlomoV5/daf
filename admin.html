@@ -30,6 +30,13 @@
   <div id="app" class="w-full h-full">
     <!-- Toast Container -->
     <div id="toast-container" class="fixed top-4 left-4 right-4 z-[60] flex flex-col gap-2"></div>
+    <!-- Wait Overlay -->
+    <div id="wait-overlay" style="display:none" class="fixed inset-0 bg-slate-900/70 z-[70] flex items-center justify-center">
+      <div class="bg-slate-800 border border-slate-600 rounded-2xl px-8 py-6 flex items-center gap-4 shadow-2xl">
+        <svg class="animate-spin h-6 w-6 text-amber-400 shrink-0" viewBox="0 0 24 24" fill="none"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+        <span class="text-white font-semibold text-base">אנא המתן…</span>
+      </div>
+    </div>
 
     <!-- Header -->
     <header class="bg-gradient-to-r from-amber-600 to-amber-700 shadow-lg sticky top-0 z-40">
@@ -571,6 +578,11 @@
       setTimeout(() => toast.remove(), 3000);
     }
 
+    function showWaitOverlay(visible) {
+      const el = document.getElementById('wait-overlay');
+      if (el) el.style.display = visible ? 'flex' : 'none';
+    }
+
     function showActionDoneModal(message, onOk) {
       showModal(`
         <div class="p-6 text-center">
@@ -890,14 +902,14 @@
           const rangeToSelectId = `range-to-${index}`;
           const rangeDeleteButtonId = `range-delete-${index}`;
           const options = uniqueDafim.map(d => `<option value="${d}">${formatDafNumber(d)}</option>`).join('');
-          rangeControls.className = 'flex flex-wrap items-center gap-2 text-xs text-slate-300';
+          rangeControls.className = 'flex flex-wrap items-center gap-2 text-xs text-slate-300 bg-slate-800/50 rounded-xl px-3 py-2';
           rangeControls.innerHTML = `
-            <span class="text-slate-400">מחק טווח:</span>
-            <select id="${rangeFromSelectId}" class="bg-slate-700 border border-slate-600 rounded-lg px-2 py-1 text-white">${options}</select>
-            <span class="text-slate-400">עד</span>
-            <select id="${rangeToSelectId}" class="bg-slate-700 border border-slate-600 rounded-lg px-2 py-1 text-white">${options}</select>
-            <button type="button" id="${rangeDeleteButtonId}" class="px-2 py-1 bg-red-600/70 hover:bg-red-600 text-white rounded text-xs transition-all">הסר</button>
-            <button type="button" id="range-learned-${index}" class="px-2 py-1 bg-emerald-600/80 hover:bg-emerald-500 text-white rounded text-xs transition-all">סמן כנלמד</button>
+            <span class="text-slate-400">טווח:</span>
+            <select id="${rangeFromSelectId}" class="bg-slate-700 border border-slate-600 rounded-lg px-2 py-1 text-white text-xs focus:border-amber-500 focus:outline-none">${options}</select>
+            <span>עד</span>
+            <select id="${rangeToSelectId}" class="bg-slate-700 border border-slate-600 rounded-lg px-2 py-1 text-white text-xs focus:border-amber-500 focus:outline-none">${options}</select>
+            <button type="button" id="${rangeDeleteButtonId}" class="px-2 py-1 bg-red-600/70 hover:bg-red-600 text-white rounded-lg text-xs transition-all">מחק</button>
+            <button type="button" id="range-learned-${index}" class="px-2 py-1 bg-emerald-600/80 hover:bg-emerald-500 text-white rounded-lg text-xs transition-all">סמן כנלמד</button>
           `;
           card.appendChild(rangeControls);
           const fromSelect = rangeControls.querySelector(`#${rangeFromSelectId}`);
@@ -1139,7 +1151,9 @@
         showToast('שיבוץ לא נמצא', 'error');
         return;
       }
+      showWaitOverlay(true);
       const result = await window.dataSdk.delete({ id: record.id });
+      showWaitOverlay(false);
       if (!result.isOk) {
         showToast('שגיאה במחיקה', 'error');
         return;
@@ -1156,26 +1170,12 @@
         showToast('שיבוץ לא נמצא', 'error');
         return;
       }
-      for (let daf = record.daf; daf <= (record.daf_end ?? record.daf); daf += 1) {
-        const assignment = assignments.find(item => item.id === record.id && item.daf === daf)
-          || assignments.find(item =>
-            item.masechet === record.masechet
-            && item.daf === daf
-            && item.name === record.name
-            && normalizePhone(item.phone) === normalizePhone(record.phone)
-          );
-        if (!assignment || assignment.learned) {
-          continue;
-        }
-        const result = await window.dataSdk.update({
-          id: assignment.id,
-          learned: true,
-          target_daf: daf
-        });
-        if (!result.isOk) {
-          showToast('שגיאה בעדכון', 'error');
-          return;
-        }
+      showWaitOverlay(true);
+      const result = await window.dataSdk.update({ id: record.id, learned: true }, { skipRefresh: true });
+      showWaitOverlay(false);
+      if (!result.isOk) {
+        showToast('שגיאה בעדכון', 'error');
+        return;
       }
       await refreshAssignments();
       renderAllLearnersSelect();
@@ -1199,66 +1199,80 @@
       const rangeStart = Math.min(fromDaf, toDaf);
       const rangeEnd = Math.max(fromDaf, toDaf);
       const userRecordIds = new Set(user.records.map(record => record.id));
-      const dafAssignments = assignments.filter(record =>
+
+      // Operate on raw range records rather than expanded dafim to avoid split-ID issues
+      const overlappingRecords = assignmentRanges.filter(record =>
         userRecordIds.has(record.id)
         && record.masechet === masechet
-        && record.daf >= rangeStart
         && record.daf <= rangeEnd
+        && (record.daf_end ?? record.daf) >= rangeStart
       );
-      if (!dafAssignments.length) {
+      if (!overlappingRecords.length) {
         showToast('אין דפים בטווח שנבחר', 'error');
         return;
       }
 
+      showWaitOverlay(true);
+
       if (action === 'learned') {
-        const dafsToUpdate = [...new Set(dafAssignments.map(assignment => assignment.daf))]
-          .sort((a, b) => a - b);
         let updated = false;
-        for (const daf of dafsToUpdate) {
-          const assignment = assignments.find(record =>
-            userRecordIds.has(record.id)
-            && record.masechet === masechet
-            && record.daf === daf
-          );
-          if (!assignment || assignment.learned) {
-            continue;
-          }
-          const result = await window.dataSdk.update({
-            id: assignment.id,
-            learned: true,
-            target_daf: daf
-          });
-          if (!result.isOk) {
-            showToast('שגיאה בעדכון', 'error');
-            return;
+        for (const rec of overlappingRecords) {
+          if (rec.learned) continue;
+          const recStart = rec.daf, recEnd = rec.daf_end ?? rec.daf;
+          const overlapStart = Math.max(rangeStart, recStart), overlapEnd = Math.min(rangeEnd, recEnd);
+          if (overlapStart > overlapEnd) continue;
+          if (overlapStart === recStart && overlapEnd === recEnd) {
+            const result = await window.dataSdk.update({ id: rec.id, learned: true }, { skipRefresh: true });
+            if (!result.isOk) { showWaitOverlay(false); showToast('שגיאה בעדכון', 'error'); return; }
+          } else {
+            const result = await window.dataSdk.delete({ id: rec.id }, { skipRefresh: true });
+            if (!result.isOk) { showWaitOverlay(false); showToast('שגיאה במחיקה', 'error'); return; }
+            const allDafim = Array.from({ length: recEnd - recStart + 1 }, (_, i) => recStart + i);
+            const overlapSet = new Set(Array.from({ length: overlapEnd - overlapStart + 1 }, (_, i) => overlapStart + i));
+            const newRecs = [
+              ...buildDafRanges(allDafim.filter(d => !overlapSet.has(d))).map(r => ({ ...rec, daf: r.start, daf_end: r.end, learned: false, is_full_masechet: false })),
+              ...buildDafRanges([...overlapSet]).map(r => ({ ...rec, daf: r.start, daf_end: r.end, learned: true, is_full_masechet: false }))
+            ];
+            if (newRecs.length) {
+              const createResult = await window.dataSdk.createBulk(newRecs, { skipRefresh: true });
+              if (!createResult.isOk) { showWaitOverlay(false); showToast('שגיאה ביצירה', 'error'); return; }
+            }
           }
           updated = true;
         }
-        if (!updated) {
-          showToast('כל הדפים בטווח כבר מסומנים כנלמד', 'info');
-          return;
-        }
+        showWaitOverlay(false);
+        if (!updated) { showToast('כל הדפים בטווח כבר מסומנים כנלמד', 'info'); return; }
         await refreshAssignments();
+        renderAllLearnersSelect();
+        renderAllLearnersView();
         showActionDoneModal('הדפים סומנו כנלמד.');
         return;
       }
 
       if (action === 'delete') {
-        for (const assignment of dafAssignments) {
-          const result = await window.dataSdk.delete({
-            id: assignment.id,
-            target_daf: assignment.daf
-          }, { skipRefresh: true });
-          if (!result.isOk) {
-            showToast('שגיאה במחיקה', 'error');
-            return;
+        for (const rec of overlappingRecords) {
+          const recStart = rec.daf, recEnd = rec.daf_end ?? rec.daf;
+          const overlapStart = Math.max(rangeStart, recStart), overlapEnd = Math.min(rangeEnd, recEnd);
+          if (overlapStart > overlapEnd) continue;
+          const result = await window.dataSdk.delete({ id: rec.id }, { skipRefresh: true });
+          if (!result.isOk) { showWaitOverlay(false); showToast('שגיאה במחיקה', 'error'); return; }
+          const allDafim = Array.from({ length: recEnd - recStart + 1 }, (_, i) => recStart + i);
+          const delSet = new Set(Array.from({ length: overlapEnd - overlapStart + 1 }, (_, i) => overlapStart + i));
+          const remaining = buildDafRanges(allDafim.filter(d => !delSet.has(d))).map(r => ({ ...rec, daf: r.start, daf_end: r.end, is_full_masechet: false }));
+          if (remaining.length) {
+            const createResult = await window.dataSdk.createBulk(remaining, { skipRefresh: true });
+            if (!createResult.isOk) { showWaitOverlay(false); showToast('שגיאה ביצירה', 'error'); return; }
           }
         }
+        showWaitOverlay(false);
         await refreshAssignments();
+        renderAllLearnersSelect();
+        renderAllLearnersView();
         showActionDoneModal('הדפים נמחקו.');
         return;
       }
 
+      showWaitOverlay(false);
       showToast('פעולה לא נתמכת', 'error');
     }
 
