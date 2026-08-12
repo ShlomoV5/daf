@@ -849,7 +849,7 @@
 
         const cell = document.createElement('button');
         cell.type = 'button';
-        cell.className = `tractate-daf-cell ${sederTheme} daf-state-${status}`;
+        cell.className = `tractate-daf-cell ${sederTheme} daf-state-${status}`.trim();
         cell.textContent = formatDafNumber(daf);
         cell.title = assignment
           ? `${assignment.name}${assignment.dedication ? ' – ' + assignment.dedication : ''}`
