@@ -52,9 +52,12 @@
       --seder-color: #64748b;
       --seder-color-soft: rgba(100, 116, 139, 0.18);
       --seder-border-color: rgba(148, 163, 184, 0.85);
+      --card-tint-rgb: 100, 116, 139;
+      --card-tint-opacity: 0;
       text-align: right;
       border: 1.5px solid var(--seder-color);
       background:
+        linear-gradient(180deg, rgba(var(--card-tint-rgb), var(--card-tint-opacity)), rgba(var(--card-tint-rgb), var(--card-tint-opacity))),
         linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(15, 23, 42, 0.84)),
         radial-gradient(circle at top right, var(--seder-color-soft), transparent 62%);
       box-shadow: 0 10px 24px rgba(15, 23, 42, 0.26);
@@ -68,6 +71,46 @@
     .tractate-card:focus-visible {
       outline: 2px solid rgba(255,255,255,0.75);
       outline-offset: 2px;
+    }
+    .tractate-card-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+    .tractate-card-title {
+      flex: 0 1 auto;
+      max-width: 50%;
+      min-width: 0;
+      font-size: clamp(0.78rem, 0.72rem + 0.45vw, 1rem);
+      line-height: 1.2;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .tractate-card-progress {
+      flex: 1 1 50%;
+      min-width: 0;
+      height: 10px;
+      display: flex;
+      overflow: hidden;
+      border-radius: 9999px;
+      background: rgba(2, 6, 23, 0.94);
+      border: 1px solid rgba(148, 163, 184, 0.3);
+      box-shadow: inset 0 1px 2px rgba(0,0,0,0.55);
+    }
+    .tractate-card-progress-segment {
+      height: 100%;
+      transition: width 0.3s ease;
+    }
+    .tractate-card-progress-segment.learned {
+      background: rgba(16, 185, 129, 0.96);
+    }
+    .tractate-card-progress-segment.assigned {
+      background: rgba(37, 99, 235, 0.94);
+    }
+    .tractate-card-progress-segment.free {
+      background: rgba(2, 6, 23, 0.98);
     }
     .tractate-preview {
       display: grid;
@@ -243,6 +286,13 @@
   function normalizePhone(v) { return String(v||'').replace(/\D/g,''); }
   function isValidPhone(p) { return /^\d{9,15}$/.test(p); }
   function escapeHtml(v) { return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+  function clamp(value, min, max) { return Math.min(max, Math.max(min, value)); }
+  function hexToRgbCss(hex) {
+    const cleaned = String(hex || '').replace('#','').trim();
+    if (!/^[\da-fA-F]{6}$/.test(cleaned)) return '100, 116, 139';
+    const int = parseInt(cleaned, 16);
+    return `${(int >> 16) & 255}, ${(int >> 8) & 255}, ${int & 255}`;
+  }
 
   function buildDafRanges(nums) {
     if (!nums.length) return [];
@@ -329,15 +379,31 @@
   }
   function getMasechetStats(masechet) {
     const mas = MASECHOT_DATA.find(m=>m.name===masechet);
+    const total = Math.max(0, mas?.dafim || 0);
     const assigned = getAssignedDafim(masechet);
-    const learned = new Set(G.assignments.filter(a=>a.masechet===masechet && a.learned).map(a=>a.daf)).size;
+    const assignedCount = clamp(assigned.length, 0, total);
+    const learned = clamp(
+      new Set(G.assignments.filter(a=>a.masechet===masechet && a.learned).map(a=>a.daf)).size,
+      0,
+      assignedCount
+    );
+    const assignedOnly = Math.max(0, assignedCount - learned);
+    const free = Math.max(0, total - assignedCount);
     const freeBlocks = getFreeBlocks(masechet);
+    const learnedRatio = total ? learned / total : 0;
+    const assignedOnlyRatio = total ? assignedOnly / total : 0;
+    const freeRatio = total ? free / total : 0;
     return {
       mas,
-      assigned: assigned.length,
+      total,
+      assigned: assignedCount,
       learned,
-      free: Math.max(0, (mas?.dafim || 0) - assigned.length),
+      assignedOnly,
+      free,
       freeBlocks,
+      learnedRatio,
+      assignedOnlyRatio,
+      freeRatio,
     };
   }
   function buildAutoAssignRecords(count, identity) {
@@ -979,22 +1045,36 @@
     );
   };
 
-  const TractateCard = ({ mas, selected, onOpen }) => {
+  const TractateCard = ({ mas, stats, selected, onOpen }) => {
     const color = SEDER_COLORS[mas.seder] || FALLBACK_SEDER_COLOR;
+    const cardStats = stats || getMasechetStats(mas.name);
     const previewColumns = mas.dafim >= TRACTATE_PREVIEW_COLUMNS.largeDafim
       ? TRACTATE_PREVIEW_COLUMNS.largeCols
       : mas.dafim >= TRACTATE_PREVIEW_COLUMNS.mediumDafim
         ? TRACTATE_PREVIEW_COLUMNS.mediumCols
         : TRACTATE_PREVIEW_COLUMNS.compactCols;
+    const tintStrength = clamp(cardStats.learnedRatio * 0.5, 0, 0.5);
+    const progressTitle = `${mas.name} · נלמדו ${cardStats.learned} · נתפסו ${cardStats.assigned} · פנויים ${cardStats.free} · סה״כ ${cardStats.total}`;
     return (
       <button
         type="button"
         onClick={onOpen}
         className={`tractate-card ${color.theme} rounded-2xl p-3 sm:p-4 space-y-3`}
-        title={`פתח מסכת ${mas.name}`}
+        title={progressTitle}
         aria-label={`פתח מסכת ${mas.name}`}
+        style={{
+          '--card-tint-rgb': hexToRgbCss(color.hex),
+          '--card-tint-opacity': tintStrength.toFixed(3),
+        }}
       >
-        <div className="text-sm sm:text-base font-bold text-white truncate">{mas.name}</div>
+        <div className="tractate-card-header" title={progressTitle}>
+          <div className="tractate-card-title font-bold text-white">{mas.name}</div>
+          <div className="tractate-card-progress" aria-hidden="true">
+            <span className="tractate-card-progress-segment learned" style={{ width:`${cardStats.learnedRatio * 100}%` }} />
+            <span className="tractate-card-progress-segment assigned" style={{ width:`${cardStats.assignedOnlyRatio * 100}%` }} />
+            <span className="tractate-card-progress-segment free" style={{ width:`${cardStats.freeRatio * 100}%` }} />
+          </div>
+        </div>
         <div
           className="tractate-preview"
           style={{ gridTemplateColumns:`repeat(${previewColumns}, minmax(0, 1fr))` }}
@@ -1117,6 +1197,10 @@
     );
     const pctOccupied = assignments.length/TOTAL_DAFIM*100;
     const pctLearned = totalLearned/TOTAL_DAFIM*100;
+    const masechetStats = React.useMemo(
+      () => Object.fromEntries(MASECHOT_DATA.map(mas => [mas.name, getMasechetStats(mas.name)])),
+      [assignments]
+    );
 
     const resetSelection = () => {
       setSelected(new Set());
@@ -1252,6 +1336,7 @@
                 <TractateCard
                   key={mas.name}
                   mas={mas}
+                  stats={masechetStats[mas.name]}
                   selected={selected}
                   onOpen={()=>setMasechetTarget(mas.name)}
                 />
