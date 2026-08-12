@@ -1171,7 +1171,7 @@
           id: assignment.id,
           learned: true,
           target_daf: daf
-        }, { skipRefresh: true });
+        });
         if (!result.isOk) {
           showToast('שגיאה בעדכון', 'error');
           return;
@@ -1211,16 +1211,23 @@
       }
 
       if (action === 'learned') {
+        const dafsToUpdate = [...new Set(dafAssignments.map(assignment => assignment.daf))]
+          .sort((a, b) => a - b);
         let updated = false;
-        for (const assignment of dafAssignments) {
-          if (assignment.learned) {
+        for (const daf of dafsToUpdate) {
+          const assignment = assignments.find(record =>
+            userRecordIds.has(record.id)
+            && record.masechet === masechet
+            && record.daf === daf
+          );
+          if (!assignment || assignment.learned) {
             continue;
           }
           const result = await window.dataSdk.update({
             id: assignment.id,
             learned: true,
-            target_daf: assignment.daf
-          }, { skipRefresh: true });
+            target_daf: daf
+          });
           if (!result.isOk) {
             showToast('שגיאה בעדכון', 'error');
             return;
