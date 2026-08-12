@@ -52,9 +52,11 @@
       --seder-color: #64748b;
       --seder-color-soft: rgba(100, 116, 139, 0.18);
       --seder-border-color: rgba(148, 163, 184, 0.85);
+      --tractate-tint: transparent;
       text-align: right;
       border: 1.5px solid var(--seder-color);
       background:
+        linear-gradient(0deg, var(--tractate-tint), var(--tractate-tint)),
         linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(15, 23, 42, 0.84)),
         radial-gradient(circle at top right, var(--seder-color-soft), transparent 62%);
       box-shadow: 0 10px 24px rgba(15, 23, 42, 0.26);
@@ -68,6 +70,44 @@
     .tractate-card:focus-visible {
       outline: 2px solid rgba(255,255,255,0.75);
       outline-offset: 2px;
+    }
+    .tractate-card-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+    .tractate-card-title {
+      flex: 0 1 50%;
+      max-width: 50%;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-size: clamp(0.75rem, 2vw, 1rem);
+      line-height: 1.2;
+    }
+    .tractate-progress-bar {
+      flex: 1 1 auto;
+      min-width: 0;
+      height: 10px;
+      display: flex;
+      overflow: hidden;
+      border-radius: 9999px;
+      background: rgba(51, 65, 85, 0.48);
+      border: 1px solid rgba(148, 163, 184, 0.22);
+    }
+    .tractate-progress-segment {
+      height: 100%;
+      transition: width 0.2s ease;
+    }
+    .tractate-progress-segment-free {
+      background: linear-gradient(180deg, #111827, #000);
+      box-shadow: inset 1px 0 0 rgba(148, 163, 184, 0.24);
+    }
+    @media (min-width: 640px) {
+      .tractate-card-title { font-size: clamp(0.8rem, 1.3vw, 1rem); }
+      .tractate-progress-bar { height: 12px; }
     }
     .tractate-preview {
       display: grid;
@@ -219,6 +259,7 @@
     mediumCols: 14,
     compactCols: 12,
   };
+  const TRACTATE_TINT_MAX = 0.5;
 
   const SEDER_COLORS = {
     'זרעים':  { bg:'bg-emerald-600', hover:'hover:bg-emerald-500', hex:'#059669', theme:'seder-zeraim' },
@@ -326,6 +367,22 @@
   }
   function getFreeBlocks(masechet) {
     return buildDafRanges(getFreeDafim(masechet)).map(r=>({ ...r, length:r.end-r.start+1 }));
+  }
+  function clampRatio(value) {
+    if (!Number.isFinite(value)) return 0;
+    return Math.max(0, Math.min(1, value));
+  }
+  function hexToRgb(hex) {
+    const raw = String(hex || '').trim().replace('#', '');
+    const normalized = raw.length===3 ? raw.split('').map(ch=>ch+ch).join('') : raw;
+    if (normalized.length!==6) return null;
+    const value = parseInt(normalized, 16);
+    if (Number.isNaN(value)) return null;
+    return {
+      r: (value >> 16) & 255,
+      g: (value >> 8) & 255,
+      b: value & 255,
+    };
   }
   function getMasechetStats(masechet) {
     const mas = MASECHOT_DATA.find(m=>m.name===masechet);
@@ -981,6 +1038,19 @@
 
   const TractateCard = ({ mas, selected, onOpen }) => {
     const color = SEDER_COLORS[mas.seder] || FALLBACK_SEDER_COLOR;
+    const stats = getMasechetStats(mas.name);
+    const total = Math.max(0, mas.dafim || 0);
+    const assigned = Math.min(stats.assigned, total);
+    const learned = Math.min(stats.learned, assigned);
+    const free = Math.max(0, total - assigned);
+    const learnedRatio = clampRatio(total ? learned / total : 0);
+    const assignedOnlyRatio = clampRatio(total ? (assigned - learned) / total : 0);
+    const freeRatio = clampRatio(total ? free / total : 0);
+    const learnedPct = learnedRatio * 100;
+    const assignedOnlyPct = assignedOnlyRatio * 100;
+    const tintStrength = learnedRatio * TRACTATE_TINT_MAX;
+    const sederRgb = hexToRgb(color.hex) || hexToRgb(FALLBACK_SEDER_COLOR.hex) || { r:100, g:116, b:139 };
+    const statsTitle = `סה״כ: ${total} | שובצו: ${assigned} | נלמדו: ${learned} | פנויים: ${free}`;
     const previewColumns = mas.dafim >= TRACTATE_PREVIEW_COLUMNS.largeDafim
       ? TRACTATE_PREVIEW_COLUMNS.largeCols
       : mas.dafim >= TRACTATE_PREVIEW_COLUMNS.mediumDafim
@@ -991,10 +1061,26 @@
         type="button"
         onClick={onOpen}
         className={`tractate-card ${color.theme} rounded-2xl p-3 sm:p-4 space-y-3`}
-        title={`פתח מסכת ${mas.name}`}
+        style={{ '--tractate-tint': `rgba(${sederRgb.r}, ${sederRgb.g}, ${sederRgb.b}, ${tintStrength})` }}
+        title={`פתח מסכת ${mas.name} | ${statsTitle}`}
         aria-label={`פתח מסכת ${mas.name}`}
       >
-        <div className="text-sm sm:text-base font-bold text-white truncate">{mas.name}</div>
+        <div className="tractate-card-header" title={statsTitle}>
+          <div className="tractate-card-title font-bold text-white">{mas.name}</div>
+          <div
+            className="tractate-progress-bar"
+            role="progressbar"
+            aria-label="התקדמות מסכת"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(learnedRatio * 100)}
+            aria-valuetext={statsTitle}
+          >
+            <span className="tractate-progress-segment bg-emerald-500" style={{ width:`${learnedPct}%` }} />
+            <span className="tractate-progress-segment bg-blue-500" style={{ width:`${assignedOnlyPct}%` }} />
+            <span className="tractate-progress-segment tractate-progress-segment-free" style={{ flex: freeRatio ? '1 1 0%' : '0 0 0%' }} />
+          </div>
+        </div>
         <div
           className="tractate-preview"
           style={{ gridTemplateColumns:`repeat(${previewColumns}, minmax(0, 1fr))` }}
