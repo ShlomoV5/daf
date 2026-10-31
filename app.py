@@ -1,10 +1,13 @@
 import base64
+import csv
+import html
 import json
 import os
 import sqlite3
 import uuid
 from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from io import StringIO
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
@@ -59,6 +62,48 @@ MASECHET_ORDER = [
 ]
 MASECHET_ORDER_INDEX = {
     masechet_name: index for index, masechet_name in enumerate(MASECHET_ORDER)
+}
+MASECHET_DAFIM = {
+    "ברכות": 63,
+    "שבת": 156,
+    "עירובין": 104,
+    "פסחים": 120,
+    "יומא": 87,
+    "סוכה": 55,
+    "ביצה": 39,
+    "ראש השנה": 34,
+    "תענית": 30,
+    "מגילה": 31,
+    "מועד קטן": 28,
+    "חגיגה": 27,
+    "שקלים": 21,
+    "יבמות": 121,
+    "כתובות": 111,
+    "נדרים": 91,
+    "נזיר": 66,
+    "סוטה": 49,
+    "גיטין": 90,
+    "קידושין": 82,
+    "בבא קמא": 119,
+    "בבא מציעא": 119,
+    "בבא בתרא": 176,
+    "סנהדרין": 113,
+    "מכות": 24,
+    "שבועות": 49,
+    "עבודה זרה": 76,
+    "הוריות": 14,
+    "זבחים": 120,
+    "מנחות": 110,
+    "חולין": 142,
+    "בכורות": 61,
+    "ערכין": 34,
+    "תמורה": 34,
+    "כריתות": 28,
+    "מעילה": 22,
+    "תמיד": 9,
+    "מדות": 4,
+    "קנים": 4,
+    "נדה": 73,
 }
 
 
@@ -550,8 +595,11 @@ class RequestHandler(BaseHTTPRequestHandler):
             return
         if path == "/dafdaf":
             params = parse_qs(parsed.query)
+            if self._wants_dafdaf_csv(params):
+                self._serve_assignment_table_csv()
+                return
             if self._wants_dafdaf_list(params):
-                self._serve_assignment_batches_text()
+                self._serve_assignment_table_html()
             else:
                 self._serve_admin_html()
             return
@@ -690,17 +738,118 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(content)
 
-    def _serve_assignment_batches_text(self) -> None:
+    def _serve_assignment_table_html(self) -> None:
         if not self._require_backup_auth():
             return
         records = store.list_assignments()
-        lines = self._format_assignment_batches(records)
-        body = "\n".join(lines).encode("utf-8")
+        rows = self._build_daf_rows(records)
+        table_rows = "\n".join(
+            f"<tr>"
+            f"<td>{html.escape(row['masechet'])}</td>"
+            f"<td>{html.escape(row['daf'])}</td>"
+            f"<td>{row['assigned']}</td>"
+            f"<td>{row['learned']}</td>"
+            f"<td>{html.escape(row['name'])}</td>"
+            f"<td>{html.escape(row['phone'])}</td>"
+            f"</tr>"
+            for row in rows
+        )
+        body = f"""
+        <!DOCTYPE html>
+        <html lang="he" dir="rtl">
+          <head>
+            <meta charset="UTF-8">
+            <title>רשימת דפי הש״ס</title>
+            <style>
+              body {{ font-family: Arial, sans-serif; background: #0f172a; color: #f8fafc; padding: 24px; }}
+              a {{ color: #38bdf8; text-decoration: none; font-weight: bold; }}
+              table {{ width: 100%; border-collapse: collapse; margin-top: 16px; background: #1e293b; }}
+              th, td {{ border: 1px solid #334155; padding: 8px; text-align: right; }}
+              th {{ background: #0f172a; position: sticky; top: 0; }}
+              .wrap {{ max-width: 1200px; margin: 0 auto; }}
+            </style>
+          </head>
+          <body>
+            <div class="wrap">
+              <a href="/dafdaf?format=csv">הורדת הטבלה כ-CSV</a>
+              <table>
+                <thead>
+                  <tr>
+                    <th>מסכת</th>
+                    <th>דף</th>
+                    <th>assigned</th>
+                    <th>learned</th>
+                    <th>name</th>
+                    <th>phone</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {table_rows}
+                </tbody>
+              </table>
+            </div>
+          </body>
+        </html>
+        """.encode("utf-8")
         self.send_response(200)
-        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _serve_assignment_table_csv(self) -> None:
+        if not self._require_backup_auth():
+            return
+        rows = self._build_daf_rows(store.list_assignments())
+        buffer = StringIO()
+        writer = csv.writer(buffer)
+        writer.writerow(["masechet", "daf", "assigned", "learned", "name", "phone"])
+        for row in rows:
+            writer.writerow(
+                [
+                    row["masechet"],
+                    row["daf"],
+                    row["assigned"],
+                    row["learned"],
+                    row["name"],
+                    row["phone"],
+                ]
+            )
+        body = buffer.getvalue().encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/csv; charset=utf-8")
+        self.send_header("Content-Disposition", 'attachment; filename="daf-list.csv"')
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    @staticmethod
+    def _build_daf_rows(records: list[dict]) -> list[dict[str, str]]:
+        assignment_map: dict[tuple[str, int], dict] = {}
+        for record in records:
+            start = int(record["daf"])
+            end = int(record.get("daf_end", start) or start)
+            for daf in range(start, end + 1):
+                assignment_map[(record["masechet"], daf)] = record
+
+        rows: list[dict[str, str]] = []
+        for masechet in MASECHET_ORDER:
+            dafim = MASECHET_DAFIM.get(masechet, 0)
+            for daf in range(2, dafim + 2):
+                record = assignment_map.get((masechet, daf))
+                assigned = record is not None
+                learned = bool(record.get("learned")) if record else False
+                rows.append(
+                    {
+                        "masechet": masechet,
+                        "daf": RequestHandler._number_to_hebrew(daf),
+                        "assigned": "true" if assigned else "false",
+                        "learned": "true" if learned else "false",
+                        "name": str(record.get("name", "")).strip() if record else "",
+                        "phone": str(record.get("phone", "")).strip() if record else "",
+                    }
+                )
+        return rows
 
     def _serve_file(self, path: Path, content_type: str) -> None:
         if not path.exists() or not path.is_file():
@@ -931,6 +1080,17 @@ class RequestHandler(BaseHTTPRequestHandler):
                 continue
             first = str(values[0]).strip().lower()
             if first in {"1", "true", "yes", "list", "text", "txt", "batches"}:
+                return True
+        return False
+
+    @staticmethod
+    def _wants_dafdaf_csv(params: dict[str, list[str]]) -> bool:
+        for key in ("output", "format"):
+            values = params.get(key)
+            if not values:
+                continue
+            first = str(values[0]).strip().lower()
+            if first == "csv":
                 return True
         return False
 
