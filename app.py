@@ -957,14 +957,37 @@ class RequestHandler(BaseHTTPRequestHandler):
                 lines.append("")
             lines.append(f"{masechet}:")
             items = sorted(grouped[masechet], key=lambda item: int(item["daf"]))
+            merged_items: list[dict] = []
             for item in items:
                 start = int(item["daf"])
                 end = int(item.get("daf_end", start) or start)
-                range_label = RequestHandler._format_daf_range_label(start, end)
                 name = str(item.get("name", "")).strip()
                 phone = str(item.get("phone", "")).strip()
                 person_label = name if not phone else f"{name} {phone}".strip()
-                lines.append(f"{range_label}: {person_label}")
+                person_key = (name, phone)
+
+                if (
+                    merged_items
+                    and merged_items[-1]["person_key"] == person_key
+                    and start <= int(merged_items[-1]["end"]) + 1
+                ):
+                    merged_items[-1]["end"] = max(int(merged_items[-1]["end"]), end)
+                    continue
+
+                merged_items.append(
+                    {
+                        "start": start,
+                        "end": end,
+                        "person_key": person_key,
+                        "person_label": person_label,
+                    }
+                )
+
+            for merged_item in merged_items:
+                range_label = RequestHandler._format_daf_range_label(
+                    int(merged_item["start"]), int(merged_item["end"])
+                )
+                lines.append(f"{range_label}: {merged_item['person_label']}")
         return lines
 
     @staticmethod
@@ -972,8 +995,8 @@ class RequestHandler(BaseHTTPRequestHandler):
         if start == end:
             return f"דף {RequestHandler._number_to_hebrew(start)}"
         return (
-            f"דפים {RequestHandler._number_to_hebrew(start)} "
-            f"עד {RequestHandler._number_to_hebrew(end)}"
+            f"דף {RequestHandler._number_to_hebrew(start)} "
+            f"עד דף {RequestHandler._number_to_hebrew(end)}"
         )
 
     @staticmethod
