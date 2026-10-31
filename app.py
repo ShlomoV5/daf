@@ -15,6 +15,51 @@ ADMIN_HTML_PATH = BASE_DIR / "admin.html"
 DB_PATH = os.environ.get("DB_PATH", str(BASE_DIR / "assignments.db"))
 MAX_CONTENT_LENGTH = 1_000_000
 BACKUP_PASSWORD = os.environ.get("BACKUP_PASSWORD", "123123")
+MASECHET_ORDER = [
+    "ברכות",
+    "שבת",
+    "עירובין",
+    "פסחים",
+    "יומא",
+    "סוכה",
+    "ביצה",
+    "ראש השנה",
+    "תענית",
+    "מגילה",
+    "מועד קטן",
+    "חגיגה",
+    "שקלים",
+    "יבמות",
+    "כתובות",
+    "נדרים",
+    "נזיר",
+    "סוטה",
+    "גיטין",
+    "קידושין",
+    "בבא קמא",
+    "בבא מציעא",
+    "בבא בתרא",
+    "סנהדרין",
+    "מכות",
+    "שבועות",
+    "עבודה זרה",
+    "הוריות",
+    "זבחים",
+    "מנחות",
+    "חולין",
+    "בכורות",
+    "ערכין",
+    "תמורה",
+    "כריתות",
+    "מעילה",
+    "תמיד",
+    "מדות",
+    "קנים",
+    "נדה",
+]
+MASECHET_ORDER_INDEX = {
+    masechet_name: index for index, masechet_name in enumerate(MASECHET_ORDER)
+}
 
 
 class PayloadTooLargeError(Exception):
@@ -898,11 +943,20 @@ class RequestHandler(BaseHTTPRequestHandler):
         for record in records:
             grouped.setdefault(record["masechet"], []).append(record)
 
+        sorted_masechot = sorted(
+            grouped,
+            key=lambda masechet_name: (
+                MASECHET_ORDER_INDEX.get(masechet_name, len(MASECHET_ORDER)),
+                masechet_name,
+            ),
+        )
+
         lines: list[str] = []
-        for index, (masechet, items) in enumerate(grouped.items()):
+        for index, masechet in enumerate(sorted_masechot):
             if index > 0:
                 lines.append("")
             lines.append(f"{masechet}:")
+            items = sorted(grouped[masechet], key=lambda item: int(item["daf"]))
             for item in items:
                 start = int(item["daf"])
                 end = int(item.get("daf_end", start) or start)
