@@ -504,7 +504,11 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._serve_ics(parsed)
             return
         if path == "/dafdaf":
-            self._serve_admin_html()
+            params = parse_qs(parsed.query)
+            if self._wants_dafdaf_list(params):
+                self._serve_assignment_batches_text()
+            else:
+                self._serve_admin_html()
             return
         if path == "/dafdaf/export":
             self._serve_backup_export()
@@ -640,6 +644,18 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(content)))
         self.end_headers()
         self.wfile.write(content)
+
+    def _serve_assignment_batches_text(self) -> None:
+        if not self._require_backup_auth():
+            return
+        records = store.list_assignments()
+        lines = self._format_assignment_batches(records)
+        body = "\n".join(lines).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def _serve_file(self, path: Path, content_type: str) -> None:
         if not path.exists() or not path.is_file():
@@ -861,6 +877,86 @@ class RequestHandler(BaseHTTPRequestHandler):
         if not value:
             return default
         return value[0] or default
+
+    @staticmethod
+    def _wants_dafdaf_list(params: dict[str, list[str]]) -> bool:
+        for key in ("list", "output", "format"):
+            values = params.get(key)
+            if not values:
+                continue
+            first = str(values[0]).strip().lower()
+            if first in {"1", "true", "yes", "list", "text", "txt", "batches"}:
+                return True
+        return False
+
+    @staticmethod
+    def _format_assignment_batches(records: list[dict]) -> list[str]:
+        if not records:
+            return ["אין שיבוצים."]
+
+        grouped: dict[str, list[dict]] = {}
+        for record in records:
+            grouped.setdefault(record["masechet"], []).append(record)
+
+        lines: list[str] = []
+        for index, (masechet, items) in enumerate(grouped.items()):
+            if index > 0:
+                lines.append("")
+            lines.append(f"{masechet}:")
+            for item in items:
+                start = int(item["daf"])
+                end = int(item.get("daf_end", start) or start)
+                range_label = RequestHandler._format_daf_range_label(start, end)
+                name = str(item.get("name", "")).strip()
+                phone = str(item.get("phone", "")).strip()
+                person_label = name if not phone else f"{name} {phone}".strip()
+                lines.append(f"{range_label}: {person_label}")
+        return lines
+
+    @staticmethod
+    def _format_daf_range_label(start: int, end: int) -> str:
+        if start == end:
+            return f"דף {RequestHandler._number_to_hebrew(start)}"
+        return (
+            f"דפים {RequestHandler._number_to_hebrew(start)} "
+            f"עד {RequestHandler._number_to_hebrew(end)}"
+        )
+
+    @staticmethod
+    def _number_to_hebrew(value: int) -> str:
+        if value <= 0:
+            return str(value)
+
+        ones = ("", "א", "ב", "ג", "ד", "ה", "ו", "ז", "ח", "ט")
+        tens = ("", "י", "כ", "ל", "מ", "נ", "ס", "ע", "פ", "צ")
+        hundreds = ("", "ק", "ר", "ש", "ת")
+
+        result: list[str] = []
+        remainder = value
+
+        while remainder >= 400:
+            result.append("ת")
+            remainder -= 400
+
+        if remainder >= 100:
+            result.append(hundreds[remainder // 100])
+            remainder %= 100
+
+        if remainder == 15:
+            result.append("טו")
+            remainder = 0
+        elif remainder == 16:
+            result.append("טז")
+            remainder = 0
+
+        if remainder >= 10:
+            result.append(tens[remainder // 10])
+            remainder %= 10
+
+        if remainder > 0:
+            result.append(ones[remainder])
+
+        return "".join(result)
 
     def _is_backup_authorized(self) -> bool:
         auth_header = self.headers.get("Authorization", "")
